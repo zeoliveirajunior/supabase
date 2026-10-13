@@ -70,7 +70,7 @@ push direto nelas, nem a Claude. A branch default do repositório é `staging`.
 | Para | Vem de | Checks no PR | No merge |
 |---|---|---|---|
 | `staging` | `<dev>_(feature|bugfix|hotfix)_<desc>` | `sql-validate.yml` (padrões + Flyway em Postgres efêmero + testes) | `sql-deploy-staging.yml` publica no projeto Supabase de **homologação** (environment `staging`) |
-| `main` | **somente `staging`** | `main-author-allowlist.yml`: autor na variável `MAIN_PR_ALLOWED_AUTHORS` **e** origem = `staging` (os dois são required status checks) | `sql-deploy-production.yml` publica no projeto Supabase de **produção** (environment `production`: aprovação do reviewer obrigatória e só a partir de `main`) |
+| `main` | **somente `staging`** | `main-author-allowlist.yml`: autor na variável `MAIN_PR_ALLOWED_AUTHORS` **e** origem = `staging` (os dois são required status checks) | `sql-deploy-production.yml` publica no projeto Supabase de **produção** automaticamente (environment `production`, só a partir de `main`, sem aprovação manual) |
 
 - Hotfix nunca vai direto para `main`: entra em `staging` por PR e depois `staging` é promovida.
 - Fluxo da Claude: branch a partir de `origin/staging` → commits → `git push -u origin <branch>` →
@@ -128,6 +128,7 @@ Supabase/
 ├── tests/*.sql                    # testes de RLS/functions (psql, uma transação, rollback)
 ├── flyway/
 │   ├── conf/flyway.{local,staging,prod}.conf
+│   ├── callbacks/afterMigrate__*.sql  # SQL idempotente que roda depois de todo migrate (ex.: trancar flyway_schema_history)
 │   ├── init/00-supabase-stubs.sql # roles + schema auth para Postgres puro (local/CI). NUNCA no Supabase real
 │   └── scripts/{generate-repeatables,validate-standards,deploy,local-db}.sh
 └── .github/workflows/{sql-validate,sql-deploy-staging,sql-deploy-production}.yml
@@ -153,6 +154,10 @@ Regra estrita: subpasta `YYYY/MM` obrigatória e igual ao timestamp do nome;
 descrição `[a-z0-9_]+`. Só DDL de tabelas/índices/grants/seeds. **Toda `CREATE TABLE` vem com
 `ENABLE ROW LEVEL SECURITY` no mesmo arquivo** (o validador exige) e ganha um trigger `<tabela>_audit`
 em `trg_audit.pgs` e uma entrada em `schema.json`.
+Objeto fora do schema `ad` (caso único: `public.flyway_schema_history`, trancada pelo callback
+`flyway/callbacks/afterMigrate__lockdown_flyway_history.sql`) fica fora do dicionário e é documentado no
+header do próprio arquivo. **DDL na `flyway_schema_history` nunca vai em migration**: o Flyway segura um
+lock nela numa segunda conexão durante o migrate e o `ALTER TABLE` trava; use callback `afterMigrate`.
 
 ### Dicionário de dados (sem Excel)
 
@@ -287,7 +292,7 @@ node tools/gen-dictionary.mjs
 
 A CI (`sql-validate.yml`) faz exatamente isso e ainda roda um segundo `migrate` que precisa dizer
 *No migration necessary*. Deploy: push em `staging` → `sql-deploy-staging.yml` (info + repair + migrate);
-push em `main` → `sql-deploy-production.yml` (info + migrate; environment com required reviewers).
+push em `main` → `sql-deploy-production.yml` (info + migrate, automático; sem repair).
 
 ### Conexão do Flyway com o Supabase
 
