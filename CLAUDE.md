@@ -316,7 +316,8 @@ Consolidado das planilhas da clínica (custos → estrutura por hora → preço 
 o que estava errado nelas (comissão/cartão/lucro/IR somados "por fora" do custo, colunas vazias, `#REF!`).
 
 - **Custo mensal** = despesas fixas + variáveis + eventuais anuais ÷ 12 + publicidade (`od.clinic_expense`).
-- **Estrutura por hora** = custo mensal ÷ (salas × horas/semana × semanas/mês × ocupação) (`od.pricing_param`).
+- **Estrutura por hora** = custo mensal ÷ (salas × horas/semana × semanas/mês × ocupação) (`od.pricing_param`),
+  ou o valor manual `vl_structure_hour_manual` quando preenchido.
 - **Custo direto** = materiais (`qt_used` × custo unitário; unitário = preço da embalagem ÷ (rendimento × (1 − perda)))
   + outros materiais + laboratório + minutos/60 × estrutura/hora + minutos/60 × hora clínica do profissional.
 - **Percentuais sobre o preço**: cartão, comissão (padrão da filial ou do procedimento), taxas adicionais ativas

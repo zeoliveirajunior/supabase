@@ -97,6 +97,25 @@ begin
   assert (_r -> 'summary' ->> 'pc_fees')::numeric = 5, 'so a taxa ativa entra';
   assert (_r -> 'summary' ->> 'pc_tax')::numeric = 10, 'IR do regime PJ';
   assert jsonb_array_length(_r -> 'expenses') = 4 and jsonb_array_length(_r -> 'fees') = 2, 'listas substituidas';
+  assert _r -> 'params' ->> 'vl_structure_hour_manual' is null, 'sem valor manual de estrutura';
+
+  -- estrutura por hora manual substitui o calculo; null volta ao calculo
+  perform ad.pricing_param_save(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1,
+            'params', jsonb_build_object('vl_structure_hour_manual', 70)));
+  _r := ad.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
+  assert (_r -> 'summary' ->> 'vl_structure_hour')::numeric = 70, 'estrutura manual deveria valer 70';
+  assert (_r -> 'summary' ->> 'vl_structure_hour_calc')::numeric = 62.50, 'calculo continua disponivel';
+  perform ad.pricing_param_save(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1,
+            'params', jsonb_build_object('vl_structure_hour_manual', null)));
+  _r := ad.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
+  assert (_r -> 'summary' ->> 'vl_structure_hour')::numeric = 62.50, 'null limpa o valor manual';
+  begin
+    perform ad.pricing_param_save(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1,
+              'params', jsonb_build_object('vl_structure_hour_manual', -1)));
+    raise exception 'FALHA: estrutura manual negativa aceita';
+  exception when others then
+    if sqlerrm not like '%PRICING_PARAM_INVALID%' then raise; end if;
+  end;
 
   -- percentuais impossiveis: desfaz a transacao da RPC inteira
   begin
