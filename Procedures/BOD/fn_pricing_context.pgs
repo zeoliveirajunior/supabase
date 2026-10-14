@@ -2,7 +2,7 @@
   ::  Project     : Supabase multi-company login (base do futuro sistema odonto)  ::
   ::  Schema      : OD - Odontologia                                              ::
   ::  Object      : od.fn_pricing_context(bigint, bigint)                         ::
-  ::  UsedBy      : od.pricing_param_get, od.pricing_param_save, od.procedure_list ::
+  ::  UsedBy      : ad.pricing_param_get, ad.pricing_param_save, ad.procedure_list ::
   ::----------------------------------------------------------------------------::
   ::  Programmer  : Jose Carlos de Oliveira Junior                                ::
   ::  Date        : 14/10/2026                                                    ::

@@ -9,12 +9,14 @@ procedimentos** — rodando em **Supabase** (PostgreSQL + Auth + PostgREST). Tr�
 | Schema | Papel | Exposto na API |
 |---|---|---|
 | `ad` (Administrative) | empresas, filiais, usuários, perfis, telas, logs | sim |
-| `od` (Odontologia) | negócio da clínica; hoje: precificação (materiais, procedimentos, parâmetros) | sim |
+| `od` (Odontologia) | tabelas e helpers do negócio; hoje: precificação (materiais, procedimentos, parâmetros) | **não** (o app só chega por RPC em `ad`) |
 | `private` | helpers de RLS | **nunca** |
 
 **No futuro** o schema `od` recebe agenda, pacientes, prontuário, orçamentos e financeiro, sempre **em cima**
 desta base: toda tabela de negócio tem `(nr_company, nr_branch)`, policy RLS baseada em
 `private.fn_my_branches()` e escrita só por RPC que checa a permissão por tela (`ad.fn_screen_permission`).
+**Toda RPC exposta ao app fica em `ad`** (único schema na API): assim nenhum módulo novo exige mexer em
+"Exposed schemas" no dashboard. O schema de negócio guarda tabelas, policies e helpers `fn_*`.
 
 O app será um único código **Flutter** (web + Android + iOS) usando `supabase_flutter`.
 As telas ainda não existem neste repo — aqui é só banco.
@@ -44,8 +46,8 @@ Objetos principais:
 | `private.fn_*` | helpers de RLS (`fn_current_user_nr`, `fn_my_branches`, `fn_my_companies`, `fn_is_company_admin`, `fn_is_admin_of_user`), fora da API |
 | `od.pricing_param` / `od.clinic_expense` / `od.pricing_fee` | parâmetros de precificação da filial, despesas (custo mensal → estrutura/hora) e taxas adicionais |
 | `od.material` / `od.procedure` / `od.procedure_material` | catálogo de materiais (custo por unidade de uso), procedimentos e materiais × quantidade |
-| `od.pricing_param_get` / `od.pricing_param_save` | aba Parâmetros da tela Precificação |
-| `od.material_list` / `od.material_save` / `od.procedure_list` / `od.procedure_save` | CRUD da tela; `procedure_list` devolve o preço calculado |
+| `ad.pricing_param_get` / `ad.pricing_param_save` | aba Parâmetros da tela Precificação |
+| `ad.material_list` / `ad.material_save` / `ad.procedure_list` / `ad.procedure_save` | CRUD da tela; `procedure_list` devolve o preço calculado |
 | `od.fn_pricing_calc` / `od.fn_pricing_context` | fórmula do preço (única fonte) e resumo da filial |
 | Edge Function `material-price-lookup` | pesquisa de preço de mercado de um material (Claude + web search; secret `ANTHROPIC_API_KEY`) |
 
@@ -138,7 +140,7 @@ ou function no schema `ad` sem comentário, ou seja, sem entrada no JSON.
 ```
 Supabase/
 ├── Procedures/BAD/<nome>.pgs      # REPEATABLES do schema ad: functions, triggers e RLS policies (Flyway reaplica se o checksum mudar)
-├── Procedures/BOD/<nome>.pgs      # REPEATABLES do schema od (negócio): RPCs, fn_pricing_*, rls_od_policies, trg_od_audit
+├── Procedures/BOD/<nome>.pgs      # REPEATABLES do schema od (negócio): fn_pricing_*, rls_od_policies, trg_od_audit (RPCs ficam em BAD)
 ├── Procedures/BPRIVATE/fn_*.pgs   # helpers de RLS no schema private (fora da API)
 ├── Scripts/YYYY/MM/V<YYYYMMDD>_<HHMM>__<desc>.sql   # VERSIONADAS: DDL (uma vez, em ordem)
 ├── docs/
@@ -259,8 +261,8 @@ preenchidas pelo trigger `ad.trg_audit` (não precisa setar nas functions).
    `ad.access_profile_screen` diz o que cada perfil pode (ler / criar / alterar). Perfil nível 100
    ignora a tabela. `session_context` entrega as permissões efetivas por filial e o app esconde o que
    o usuário não pode. **Tela nova = linha nova em `ad.screen`** (versionada) com uuid fixo.
-   Toda RPC que altera dados grava `ad.fn_event_log(...)` com o código da tela. RPC de negócio (`od`)
-   checa `ad.fn_screen_permission(nr_company, nr_branch, 'TELA')`: `id_read` para listar, `id_create`
+   Toda RPC que altera dados grava `ad.fn_event_log(...)` com o código da tela. RPC de negócio (em `ad`,
+   sobre tabelas de `od`) checa `ad.fn_screen_permission(nr_company, nr_branch, 'TELA')`: `id_read` para listar, `id_create`
    para `vc_action = 'I'`, `id_update` para `'U'` (nunca `fn_is_company_admin`: admin já tem tudo).
 8b. **Anti-lockout**: operações que mexem em perfis/vínculos terminam com `ad.fn_company_has_admin` e
    desfazem a transação se a empresa ficaria sem administrador ativo.
@@ -326,6 +328,8 @@ o que estava errado nelas (comissão/cartão/lucro/IR somados "por fora" do cust
   vivo). `procedure_list` sempre recalcula: o preço nunca é gravado. Percentuais em pontos (4 = 4%).
 - Preço de mercado dos materiais: Edge Function `material-price-lookup` (o usuário escolhe a oferta;
   `material_save` grava `it_price_source = 2` e a loja/URL).
+- RPCs em `ad` (`ad.pricing_param_get/save`, `ad.material_list/save`, `ad.procedure_list/save`); tabelas,
+  policies e helpers em `od`. `od` **não** entra em Exposed schemas.
 
 ## Flyway — fluxo de mudança
 
@@ -369,7 +373,7 @@ O repo versiona `.mcp.json` com o servidor `supabase` (HTTP, `project_ref` do pr
   projeto de desenvolvimento, nunca em produção.
 - **Produção**: se um dia for conectado, usar `read_only=true` na URL e um `project_ref` separado.
 - Ao abrir o projeto no Supabase pela primeira vez, conferir com o MCP os advisors (nenhum aviso de
-  RLS desligada ou `search_path mutable`) e se `ad` e `od` estão em Exposed schemas.
+  RLS desligada ou `search_path mutable`) e se `ad` está em Exposed schemas (`od` e `private` ficam fora).
 
 ### Edge Functions (`supabase/functions/<nome>/index.ts`)
 
@@ -382,12 +386,12 @@ sempre depois de validar o chamador por uma RPC (ex.: `user_create_check`).
 | Function | Faz | Secrets (Edge Functions → Secrets) |
 |---|---|---|
 | `user-create` | cria a conta no Auth (service_role) e vincula à empresa | nenhum extra |
-| `material-price-lookup` | pesquisa preço de mercado de um material (Claude + web search); valida acesso com `od.pricing_param_get`; não grava nada | `ANTHROPIC_API_KEY` (obrigatório), `PRICE_LOOKUP_MODEL` (opcional) |
+| `material-price-lookup` | pesquisa preço de mercado de um material (Claude + web search); valida acesso com `ad.pricing_param_get`; não grava nada | `ANTHROPIC_API_KEY` (obrigatório), `PRICE_LOOKUP_MODEL` (opcional) |
 
 ### Setup do projeto Supabase (uma vez por ambiente)
 
-1. Dashboard → **Project Settings → API → Exposed schemas**: adicionar `ad` **e `od`** (senão o PostgREST não enxerga).
-   Nunca `private`.
+1. Dashboard → **Project Settings → API → Exposed schemas**: adicionar `ad` (senão o PostgREST não enxerga).
+   Nunca `private` nem `od`: o app só chega aos dados de negócio por RPC em `ad`.
 2. **Authentication → URL Configuration**: Site URL e Redirect URLs do app.
 3. Rodar o workflow de deploy (ou `./flyway/scripts/deploy.sh staging` com as env vars).
 4. Conferir **Database → Advisors**: não pode haver aviso de RLS desligada nem `search_path mutable`.

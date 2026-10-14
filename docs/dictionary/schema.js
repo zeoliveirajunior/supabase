@@ -6,7 +6,7 @@ window.DICTIONARY = {
   "schema_title": "AD - Administrative",
   "schemas": {
     "ad": "AD - Administrative (empresas, filiais, usuários, perfis, telas, logs)",
-    "od": "OD - Odontologia (precificação)",
+    "od": "OD - Odontologia (tabelas e helpers da precificação; RPCs expostas ficam em ad)",
     "private": "helpers de RLS, fora da API"
   },
   "updated": "2026-10-14",
@@ -2176,7 +2176,7 @@ window.DICTIONARY = {
     },
     {
       "name": "pricing_param_get",
-      "signature": "od.pricing_param_get(p_json jsonb)",
+      "signature": "ad.pricing_param_get(p_json jsonb)",
       "kind": "rpc",
       "grant": "authenticated",
       "description": "Aba Parâmetros da precificação: parâmetros da filial (ou padrões sugeridos quando ainda não salvos), resumo calculado (custo mensal, horas produtivas, custo da estrutura por hora, soma das taxas ativas, IR do regime), despesas, taxas adicionais e a permissão do usuário na tela PRICING. Exige leitura na tela PRICING.",
@@ -2188,7 +2188,7 @@ window.DICTIONARY = {
     },
     {
       "name": "pricing_param_save",
-      "signature": "od.pricing_param_save(p_json jsonb)",
+      "signature": "ad.pricing_param_save(p_json jsonb)",
       "kind": "rpc",
       "grant": "authenticated",
       "description": "Salva parâmetros (parcial), despesas e taxas adicionais (listas substituídas) da filial; valida que os percentuais do regime deixam divisor positivo. Permissão criar (1ª vez) / alterar na tela PRICING. Grava event_log.",
@@ -2209,7 +2209,7 @@ window.DICTIONARY = {
     },
     {
       "name": "material_list",
-      "signature": "od.material_list(p_json jsonb)",
+      "signature": "ad.material_list(p_json jsonb)",
       "kind": "rpc",
       "grant": "authenticated",
       "description": "Catálogo de materiais da filial com o custo por unidade de uso e em quantos procedimentos cada um é usado. Filtros: id_include_inactive, vc_search. Exige leitura na tela PRICING.",
@@ -2221,7 +2221,7 @@ window.DICTIONARY = {
     },
     {
       "name": "material_save",
-      "signature": "od.material_save(p_json jsonb)",
+      "signature": "ad.material_save(p_json jsonb)",
       "kind": "rpc",
       "grant": "authenticated",
       "description": "Cria (I, permissão criar) ou atualiza parcialmente (U, permissão alterar) um material: embalagem, preço, rendimento, unidade, perda, origem do preço (manual / pesquisa de mercado), situação. Grava event_log.",
@@ -2243,7 +2243,7 @@ window.DICTIONARY = {
     },
     {
       "name": "procedure_list",
-      "signature": "od.procedure_list(p_json jsonb)",
+      "signature": "ad.procedure_list(p_json jsonb)",
       "kind": "rpc",
       "grant": "authenticated",
       "description": "Procedimentos da filial com materiais, preço calculado (fn_pricing_calc), preço mínimo, decomposição (cartão, comissão, taxas, IR, lucro) e alertas (NO_TIME, NO_MATERIAL, MATERIAL_NO_PRICE, PERCENT_TOO_HIGH). it_tax_regime simula PF x PJ. Devolve também parâmetros, resumo e categorias. Exige leitura na tela PRICING.",
@@ -2256,7 +2256,7 @@ window.DICTIONARY = {
     },
     {
       "name": "procedure_save",
-      "signature": "od.procedure_save(p_json jsonb)",
+      "signature": "ad.procedure_save(p_json jsonb)",
       "kind": "rpc",
       "grant": "authenticated",
       "description": "Cria (I, permissão criar) ou atualiza parcialmente (U, permissão alterar) um procedimento e, quando materials está presente, substitui seus materiais x quantidades. Grava event_log.",

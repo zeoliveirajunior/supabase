@@ -4,10 +4,10 @@
 // preco da embalagem de um material, buscando valores praticados em lojas
 // brasileiras de produtos odontologicos. A pesquisa na web precisa de uma chave
 // de API (nunca no app). O app chama esta function com o JWT do usuario; aqui:
-//   1. od.pricing_param_get (como o chamador) - tem acesso a filial e a tela PRICING?
+//   1. ad.pricing_param_get (como o chamador) - tem acesso a filial e a tela PRICING?
 //   2. provedor de pesquisa (Claude + web search) - devolve ofertas em JSON
-// A function NAO grava nada: o usuario escolhe a oferta e salva com od.material_save
-// (it_price_source = 2, vc_price_source = loja/URL).
+// A function NAO grava nada: o usuario escolhe a oferta e salva com
+// (ad.material_save, it_price_source = 2, vc_price_source = loja/URL).
 //
 // Entrada (JSON): { nr_company, nr_branch, vc_query }   (nome do material + embalagem)
 // Saida 200:      { vc_query, vc_provider, vl_suggested, offers: [{ vc_store, vc_title,
@@ -216,7 +216,7 @@ Deno.serve(async (req: Request) => {
     Deno.env.get("SUPABASE_ANON_KEY")!,
     { global: { headers: { Authorization: authorization } }, auth: { persistSession: false } },
   );
-  const access = await asCaller.schema("od").rpc("pricing_param_get", {
+  const access = await asCaller.schema("ad").rpc("pricing_param_get", {
     p_json: { nr_version: 1, nr_company: nrCompany, nr_branch: nrBranch },
   });
   if (access.error) return passThrough(access.error);

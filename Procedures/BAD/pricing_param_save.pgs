@@ -1,8 +1,8 @@
 /*::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
   ::  Project     : Supabase multi-company login (base do futuro sistema odonto)  ::
-  ::  Schema      : OD - Odontologia                                              ::
-  ::  Object      : od.pricing_param_save(jsonb)                                  ::
-  ::  UsedBy      : Flutter -> supabase.schema('od').rpc('pricing_param_save')    ::
+  ::  Schema      : AD - Administrative (RPC exposta; dados no schema od)         ::
+  ::  Object      : ad.pricing_param_save(jsonb)                                  ::
+  ::  UsedBy      : Flutter -> supabase.schema('ad').rpc('pricing_param_save')    ::
   ::----------------------------------------------------------------------------::
   ::  Programmer  : Jose Carlos de Oliveira Junior                                ::
   ::  Date        : 14/10/2026                                                    ::
@@ -36,7 +36,7 @@
     PRICING_FEES_INVALID, PRICING_FEE_NAME_REQUIRED, PRICING_FEE_RATE_INVALID {Fee},
     PRICING_PERCENT_TOO_HIGH {Total}
 */
-create or replace function od.pricing_param_save(p_json jsonb)
+create or replace function ad.pricing_param_save(p_json jsonb)
 returns jsonb
 language plpgsql
 security definer
@@ -228,5 +228,5 @@ begin
 end;
 $$;
 
-revoke all on function od.pricing_param_save(jsonb) from public, anon;
-grant execute on function od.pricing_param_save(jsonb) to authenticated;
+revoke all on function ad.pricing_param_save(jsonb) from public, anon;
+grant execute on function ad.pricing_param_save(jsonb) to authenticated;

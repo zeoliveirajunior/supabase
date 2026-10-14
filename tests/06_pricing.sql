@@ -1,5 +1,5 @@
 -- ============================================================================
--- Precificacao (schema od): parametros, despesas, taxas, materiais,
+-- Precificacao (RPCs em ad, tabelas em od): parametros, despesas, taxas, materiais,
 -- procedimentos, formula do preco (PJ x PF), permissao por tela PRICING e RLS.
 --   Ana  = administradora da empresa
 --   Bia  = perfil "Financeiro": PRICING ler + criar (sem alterar)
@@ -58,7 +58,7 @@ begin
   perform set_config('test.nr_company', _ca::text, false);
 
   -- parametros ainda nao salvos: padroes + sugestoes
-  _r := od.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
+  _r := ad.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
   assert not (_r -> 'params' ->> 'id_saved')::boolean, 'id_saved deveria ser false antes de salvar';
   assert (_r -> 'params' ->> 'pc_profit')::numeric = 30, 'lucro padrao deveria ser 30';
   assert jsonb_array_length(_r -> 'expenses') = 20, 'deveriam vir 20 despesas sugeridas';
@@ -67,14 +67,14 @@ begin
   assert (_r -> 'summary' ->> 'vl_structure_hour')::numeric = 0, 'sem despesas o custo da estrutura e zero';
 
   begin
-    perform od.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca));
+    perform ad.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca));
     raise exception 'FALHA: sem filial aceito';
   exception when others then
     if sqlerrm not like '%PRICING_BRANCH_REQUIRED%' then raise; end if;
   end;
 
   -- salva parametros + despesas + taxas
-  _r := od.pricing_param_save(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1,
+  _r := ad.pricing_param_save(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1,
           'params', jsonb_build_object('qt_rooms', 2, 'qt_hours_week', 40, 'qt_weeks_month', 4, 'pc_occupancy', 50,
                                        'vl_professional_hour', 60, 'pc_card', 4, 'pc_commission', 6,
                                        'it_tax_regime', 2, 'pc_tax_pf', 27.5, 'pc_tax_pj', 10, 'pc_profit', 25),
@@ -88,7 +88,7 @@ begin
             jsonb_build_object('vc_name', 'Inadimplência', 'pc_rate', 3, 'id_active', false))));
   assert (_r ->> 'id_saved')::boolean, 'save deveria devolver id_saved';
 
-  _r := od.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
+  _r := ad.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
   assert (_r -> 'params' ->> 'id_saved')::boolean, 'id_saved deveria ser true';
   assert (_r -> 'summary' ->> 'vl_monthly_cost')::numeric = 10000, 'custo mensal esperado 10000, veio ' || (_r -> 'summary' ->> 'vl_monthly_cost');
   assert (_r -> 'summary' ->> 'qt_hours_month')::numeric = 320, 'horas por mes esperado 320';
@@ -100,17 +100,17 @@ begin
 
   -- percentuais impossiveis: desfaz a transacao da RPC inteira
   begin
-    perform od.pricing_param_save(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1,
+    perform ad.pricing_param_save(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1,
               'params', jsonb_build_object('pc_profit', 90)));
     raise exception 'FALHA: percentuais >= 100%% aceitos';
   exception when others then
     if sqlerrm not like '%PRICING_PERCENT_TOO_HIGH%' then raise; end if;
   end;
-  _r := od.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
+  _r := ad.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
   assert (_r -> 'params' ->> 'pc_profit')::numeric = 25, 'lucro deveria continuar 25 apos rollback';
 
   begin
-    perform od.pricing_param_save(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1,
+    perform ad.pricing_param_save(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1,
               'params', jsonb_build_object('pc_occupancy', 0)));
     raise exception 'FALHA: ocupacao zero aceita';
   exception when others then
@@ -118,33 +118,33 @@ begin
   end;
 
   -- materiais
-  _r := od.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
+  _r := ad.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
           'vc_name', 'Luva de procedimento', 'vc_package', 'Caixa 50 pares', 'vl_package_price', 100, 'qt_yield', 50, 'vc_unit', 'par'));
   _m1 := (_r ->> 'nr_material')::bigint;
-  _r := od.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
+  _r := ad.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
           'vc_name', 'Resina composta', 'vc_package', 'Seringa 4 g', 'vl_package_price', 90, 'qt_yield', 100, 'vc_unit', '0,1 g', 'pc_waste', 10));
   _m2 := (_r ->> 'nr_material')::bigint;
-  _r := od.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
+  _r := ad.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
           'vc_name', 'Gaze', 'vc_package', 'Pacote 500', 'qt_yield', 500));
   _m3 := (_r ->> 'nr_material')::bigint;
   assert _m1 = 1 and _m2 = 2 and _m3 = 3, 'nr_material sequencial por filial';
 
   begin
-    perform od.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
+    perform ad.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
               'vc_name', 'luva de PROCEDIMENTO'));
     raise exception 'FALHA: nome repetido aceito';
   exception when others then
     if sqlerrm not like '%MATERIAL_NAME_IN_USE%' then raise; end if;
   end;
   begin
-    perform od.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
+    perform ad.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
               'vc_name', 'X', 'qt_yield', 0));
     raise exception 'FALHA: rendimento zero aceito';
   exception when others then
     if sqlerrm not like '%MATERIAL_YIELD_INVALID%' then raise; end if;
   end;
 
-  _r := od.material_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
+  _r := ad.material_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
   assert jsonb_array_length(_r -> 'materials') = 3, 'deveriam listar 3 materiais';
   assert (select (m ->> 'vl_unit_cost')::numeric from jsonb_array_elements(_r -> 'materials') m where m ->> 'vc_name' = 'Luva de procedimento') = 2.0000,
     'custo unitario da luva deveria ser 2,00';
@@ -152,11 +152,11 @@ begin
     'custo unitario da resina (10% de perda) deveria ser 1,00';
   assert (select m ->> 'dh_price_updated' from jsonb_array_elements(_r -> 'materials') m where m ->> 'vc_name' = 'Gaze') is null,
     'material sem preco nao tem data de preco';
-  _r := od.material_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1, 'vc_search', 'resina'));
+  _r := ad.material_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1, 'vc_search', 'resina'));
   assert jsonb_array_length(_r -> 'materials') = 1, 'busca por nome';
 
   -- procedimento com materiais
-  _r := od.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
+  _r := ad.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
           'vc_code', '1.0', 'vc_name', 'Restauração 1 face', 'vc_category', 'Clínica Geral',
           'qt_minutes', 30, 'vl_lab_cost', 20, 'vl_material_other', 2, 'vl_current_price', 150,
           'materials', jsonb_build_array(
@@ -166,21 +166,21 @@ begin
   assert _p1 = 1, 'nr_procedure sequencial';
 
   begin
-    perform od.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
+    perform ad.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
               'vc_name', 'Y', 'materials', jsonb_build_array(jsonb_build_object('nr_material', 999, 'qt_used', 1))));
     raise exception 'FALHA: material inexistente aceito';
   exception when others then
     if sqlerrm not like '%PROCEDURE_MATERIAL_INVALID%' then raise; end if;
   end;
   begin
-    perform od.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
+    perform ad.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
               'vc_name', 'Y', 'materials', jsonb_build_array(jsonb_build_object('nr_material', _m1, 'qt_used', 0))));
     raise exception 'FALHA: quantidade zero aceita';
   exception when others then
     if sqlerrm not like '%PROCEDURE_QUANTITY_INVALID%' then raise; end if;
   end;
   begin
-    perform od.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
+    perform ad.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
               'vc_code', '1.0', 'vc_name', 'Outro'));
     raise exception 'FALHA: codigo repetido aceito';
   exception when others then
@@ -188,7 +188,7 @@ begin
   end;
 
   -- formula no regime dos parametros (PJ)
-  _r  := od.procedure_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
+  _r  := ad.procedure_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
   assert jsonb_array_length(_r -> 'procedures') = 1, 'deveria listar 1 procedimento';
   assert _r -> 'categories' = '["Clínica Geral"]'::jsonb, 'categorias distintas';
   _pr := _r -> 'procedures' -> 0 -> 'pricing';
@@ -208,7 +208,7 @@ begin
   assert (_r -> 'summary' ->> 'it_tax_regime')::int = 2, 'regime dos parametros';
 
   -- simulacao PF: IR sobre o lucro, lucro real continua 25%
-  _r  := od.procedure_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1, 'it_tax_regime', 1));
+  _r  := ad.procedure_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1, 'it_tax_regime', 1));
   _pr := _r -> 'procedures' -> 0 -> 'pricing';
   assert (_pr ->> 'it_tax_regime')::int = 1, 'regime simulado PF';
   assert (_pr ->> 'pc_profit_real')::numeric = 25, 'lucro real PF deveria ser 25%, veio ' || (_pr ->> 'pc_profit_real');
@@ -218,39 +218,39 @@ begin
   assert (_pr ->> 'vl_price')::numeric = 180.63, 'preco PF esperado 180,63, veio ' || (_pr ->> 'vl_price');
 
   begin
-    perform od.procedure_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1, 'it_tax_regime', 3));
+    perform ad.procedure_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1, 'it_tax_regime', 3));
     raise exception 'FALHA: regime invalido aceito';
   exception when others then
     if sqlerrm not like '%PROCEDURE_LIST_REGIME_INVALID%' then raise; end if;
   end;
 
   -- alertas: sem tempo, material sem preco
-  _r := od.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
+  _r := ad.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
           'vc_name', 'Curativo', 'qt_minutes', 0,
           'materials', jsonb_build_array(jsonb_build_object('nr_material', _m3, 'qt_used', 2))));
   _p2 := (_r ->> 'nr_procedure')::bigint;
-  _r  := od.procedure_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1, 'vc_search', 'curativo'));
+  _r  := ad.procedure_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1, 'vc_search', 'curativo'));
   assert jsonb_array_length(_r -> 'procedures') = 1, 'busca por nome';
   assert _r -> 'procedures' -> 0 -> 'alerts' ? 'NO_TIME', 'alerta NO_TIME';
   assert _r -> 'procedures' -> 0 -> 'alerts' ? 'NO_MATERIAL', 'alerta NO_MATERIAL (gaze sem preco = material zero)';
   assert _r -> 'procedures' -> 0 -> 'alerts' ? 'MATERIAL_NO_PRICE', 'alerta MATERIAL_NO_PRICE';
 
   -- update parcial + substituir materiais por lista vazia + inativar
-  perform od.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'U', 'nr_company', _ca, 'nr_branch', 1,
+  perform ad.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'U', 'nr_company', _ca, 'nr_branch', 1,
             'nr_procedure', _p2, 'qt_minutes', 15, 'materials', '[]'::jsonb, 'it_status', 90));
   assert (select count(*) from od.procedure_material where nr_company = _ca and nr_procedure = _p2) = 0, 'materiais substituidos por nada';
-  _r := od.procedure_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
+  _r := ad.procedure_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
   assert jsonb_array_length(_r -> 'procedures') = 1, 'inativo some da lista padrao';
-  _r := od.procedure_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1, 'id_include_inactive', true));
+  _r := ad.procedure_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1, 'id_include_inactive', true));
   assert jsonb_array_length(_r -> 'procedures') = 2, 'id_include_inactive traz os 2';
 
   -- material_list: em quantos procedimentos cada material e usado
-  _r := od.material_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
+  _r := ad.material_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
   assert (select (m ->> 'qt_procedures')::int from jsonb_array_elements(_r -> 'materials') m where m ->> 'vc_name' = 'Luva de procedimento') = 1,
     'luva usada em 1 procedimento';
 
   -- material: alterar preco atualiza dh_price_updated; nome igual ao proprio nao conflita
-  perform od.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'U', 'nr_company', _ca, 'nr_branch', 1,
+  perform ad.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'U', 'nr_company', _ca, 'nr_branch', 1,
             'nr_material', _m3, 'vc_name', 'Gaze', 'vl_package_price', 20, 'it_price_source', 2, 'vc_price_source', 'Loja Exemplo'));
   assert (select dh_price_updated is not null and it_price_source = 2 from od.material where nr_company = _ca and nr_material = _m3),
     'preco alterado deveria marcar a data e a origem';
@@ -287,31 +287,31 @@ begin
             from jsonb_array_elements(_p) x where x ->> 'vc_code' = 'PRICING'),
     'Bia deveria ter PRICING ler+criar sem alterar';
 
-  _r := od.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
+  _r := ad.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
   assert (_r -> 'permission' ->> 'id_create')::boolean and not (_r -> 'permission' ->> 'id_update')::boolean, 'permission no get';
 
-  _r := od.material_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
+  _r := ad.material_list(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
   assert jsonb_array_length(_r -> 'materials') = 3, 'Bia le os materiais da filial';
 
-  perform od.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
+  perform ad.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1,
             'vc_name', 'Sugador', 'vl_package_price', 14, 'qt_yield', 40));
 
   begin
-    perform od.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'U', 'nr_company', _ca, 'nr_branch', 1,
+    perform ad.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'U', 'nr_company', _ca, 'nr_branch', 1,
               'nr_material', 1, 'vl_package_price', 120));
     raise exception 'FALHA: Bia alterou material';
   exception when others then
     if sqlerrm not like '%MATERIAL_FORBIDDEN%' then raise; end if;
   end;
   begin
-    perform od.pricing_param_save(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1,
+    perform ad.pricing_param_save(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1,
               'params', jsonb_build_object('pc_profit', 20)));
     raise exception 'FALHA: Bia alterou parametros';
   exception when others then
     if sqlerrm not like '%PRICING_FORBIDDEN%' then raise; end if;
   end;
   begin
-    perform od.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'U', 'nr_company', _ca, 'nr_branch', 1,
+    perform ad.procedure_save(jsonb_build_object('nr_version', 1, 'vc_action', 'U', 'nr_company', _ca, 'nr_branch', 1,
               'nr_procedure', 1, 'qt_minutes', 45));
     raise exception 'FALHA: Bia alterou procedimento';
   exception when others then
@@ -334,13 +334,13 @@ declare
   _ca bigint := current_setting('test.nr_company')::bigint;
 begin
   begin
-    perform od.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
+    perform ad.pricing_param_get(jsonb_build_object('nr_version', 1, 'nr_company', _ca, 'nr_branch', 1));
     raise exception 'FALHA: Caio leu parametros de outra empresa';
   exception when others then
     if sqlerrm not like '%PRICING_FORBIDDEN%' then raise; end if;
   end;
   begin
-    perform od.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1, 'vc_name', 'Z'));
+    perform ad.material_save(jsonb_build_object('nr_version', 1, 'vc_action', 'I', 'nr_company', _ca, 'nr_branch', 1, 'vc_name', 'Z'));
     raise exception 'FALHA: Caio criou material';
   exception when others then
     if sqlerrm not like '%MATERIAL_FORBIDDEN%' then raise; end if;
@@ -354,7 +354,7 @@ set local role anon;
 do $$
 begin
   begin
-    perform od.material_list('{"nr_version": 1}'::jsonb);
+    perform ad.material_list('{"nr_version": 1}'::jsonb);
     raise exception 'FALHA: anon chamou od.material_list';
   exception when insufficient_privilege then null;
   end;

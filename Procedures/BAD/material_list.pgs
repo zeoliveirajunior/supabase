@@ -1,8 +1,8 @@
 /*::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
   ::  Project     : Supabase multi-company login (base do futuro sistema odonto)  ::
-  ::  Schema      : OD - Odontologia                                              ::
-  ::  Object      : od.material_list(jsonb)                                       ::
-  ::  UsedBy      : Flutter -> supabase.schema('od').rpc('material_list')         ::
+  ::  Schema      : AD - Administrative (RPC exposta; dados no schema od)         ::
+  ::  Object      : ad.material_list(jsonb)                                       ::
+  ::  UsedBy      : Flutter -> supabase.schema('ad').rpc('material_list')         ::
   ::----------------------------------------------------------------------------::
   ::  Programmer  : Jose Carlos de Oliveira Junior                                ::
   ::  Date        : 14/10/2026                                                    ::
@@ -29,7 +29,7 @@
 
   Errors: VERSION_MISMATCH, PRICING_BRANCH_REQUIRED, PRICING_FORBIDDEN
 */
-create or replace function od.material_list(p_json jsonb)
+create or replace function ad.material_list(p_json jsonb)
 returns jsonb
 language plpgsql
 stable
@@ -86,5 +86,5 @@ begin
 end;
 $$;
 
-revoke all on function od.material_list(jsonb) from public, anon;
-grant execute on function od.material_list(jsonb) to authenticated;
+revoke all on function ad.material_list(jsonb) from public, anon;
+grant execute on function ad.material_list(jsonb) to authenticated;
