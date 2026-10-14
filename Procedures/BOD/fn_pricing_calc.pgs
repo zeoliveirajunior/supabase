@@ -2,7 +2,7 @@
   ::  Project     : Supabase multi-company login (base do futuro sistema odonto)  ::
   ::  Schema      : OD - Odontologia                                              ::
   ::  Object      : od.fn_pricing_calc(jsonb)                                     ::
-  ::  UsedBy      : od.procedure_list, od.pricing_param_save (validacao)          ::
+  ::  UsedBy      : ad.procedure_list, ad.pricing_param_save (validacao)          ::
   ::----------------------------------------------------------------------------::
   ::  Programmer  : Jose Carlos de Oliveira Junior                                ::
   ::  Date        : 14/10/2026                                                    ::

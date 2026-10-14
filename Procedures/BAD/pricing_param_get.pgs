@@ -1,8 +1,8 @@
 /*::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
   ::  Project     : Supabase multi-company login (base do futuro sistema odonto)  ::
-  ::  Schema      : OD - Odontologia                                              ::
-  ::  Object      : od.pricing_param_get(jsonb)                                   ::
-  ::  UsedBy      : Flutter -> supabase.schema('od').rpc('pricing_param_get')     ::
+  ::  Schema      : AD - Administrative (RPC exposta; dados no schema od)         ::
+  ::  Object      : ad.pricing_param_get(jsonb)                                   ::
+  ::  UsedBy      : Flutter -> supabase.schema('ad').rpc('pricing_param_get')     ::
   ::                Edge Function material-price-lookup (checagem de acesso)      ::
   ::----------------------------------------------------------------------------::
   ::  Programmer  : Jose Carlos de Oliveira Junior                                ::
@@ -31,7 +31,7 @@
 
   Errors (ad.fn_message): VERSION_MISMATCH, PRICING_BRANCH_REQUIRED, PRICING_FORBIDDEN
 */
-create or replace function od.pricing_param_get(p_json jsonb)
+create or replace function ad.pricing_param_get(p_json jsonb)
 returns jsonb
 language plpgsql
 stable
@@ -132,5 +132,5 @@ begin
 end;
 $$;
 
-revoke all on function od.pricing_param_get(jsonb) from public, anon;
-grant execute on function od.pricing_param_get(jsonb) to authenticated;
+revoke all on function ad.pricing_param_get(jsonb) from public, anon;
+grant execute on function ad.pricing_param_get(jsonb) to authenticated;

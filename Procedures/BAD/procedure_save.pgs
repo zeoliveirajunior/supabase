@@ -1,8 +1,8 @@
 /*::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
   ::  Project     : Supabase multi-company login (base do futuro sistema odonto)  ::
-  ::  Schema      : OD - Odontologia                                              ::
-  ::  Object      : od.procedure_save(jsonb)                                      ::
-  ::  UsedBy      : Flutter -> supabase.schema('od').rpc('procedure_save')        ::
+  ::  Schema      : AD - Administrative (RPC exposta; dados no schema od)         ::
+  ::  Object      : ad.procedure_save(jsonb)                                      ::
+  ::  UsedBy      : Flutter -> supabase.schema('ad').rpc('procedure_save')        ::
   ::----------------------------------------------------------------------------::
   ::  Programmer  : Jose Carlos de Oliveira Junior                                ::
   ::  Date        : 14/10/2026                                                    ::
@@ -43,7 +43,7 @@
     PROCEDURE_STATUS_INVALID, PROCEDURE_MATERIALS_INVALID, PROCEDURE_MATERIAL_INVALID {Material},
     PROCEDURE_QUANTITY_INVALID {Material}, PROCEDURE_REQUIRED, PROCEDURE_NOT_FOUND
 */
-create or replace function od.procedure_save(p_json jsonb)
+create or replace function ad.procedure_save(p_json jsonb)
 returns jsonb
 language plpgsql
 security definer
@@ -243,5 +243,5 @@ begin
 end;
 $$;
 
-revoke all on function od.procedure_save(jsonb) from public, anon;
-grant execute on function od.procedure_save(jsonb) to authenticated;
+revoke all on function ad.procedure_save(jsonb) from public, anon;
+grant execute on function ad.procedure_save(jsonb) to authenticated;

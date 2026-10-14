@@ -1,8 +1,8 @@
 /*::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
   ::  Project     : Supabase multi-company login (base do futuro sistema odonto)  ::
-  ::  Schema      : OD - Odontologia                                              ::
-  ::  Object      : od.material_save(jsonb)                                       ::
-  ::  UsedBy      : Flutter -> supabase.schema('od').rpc('material_save')         ::
+  ::  Schema      : AD - Administrative (RPC exposta; dados no schema od)         ::
+  ::  Object      : ad.material_save(jsonb)                                       ::
+  ::  UsedBy      : Flutter -> supabase.schema('ad').rpc('material_save')         ::
   ::----------------------------------------------------------------------------::
   ::  Programmer  : Jose Carlos de Oliveira Junior                                ::
   ::  Date        : 14/10/2026                                                    ::
@@ -40,7 +40,7 @@
     MATERIAL_WASTE_INVALID, MATERIAL_SOURCE_INVALID, MATERIAL_STATUS_INVALID, MATERIAL_REQUIRED,
     MATERIAL_NOT_FOUND
 */
-create or replace function od.material_save(p_json jsonb)
+create or replace function ad.material_save(p_json jsonb)
 returns jsonb
 language plpgsql
 security definer
@@ -190,5 +190,5 @@ begin
 end;
 $$;
 
-revoke all on function od.material_save(jsonb) from public, anon;
-grant execute on function od.material_save(jsonb) to authenticated;
+revoke all on function ad.material_save(jsonb) from public, anon;
+grant execute on function ad.material_save(jsonb) to authenticated;

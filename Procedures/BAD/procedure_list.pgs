@@ -1,8 +1,8 @@
 /*::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
   ::  Project     : Supabase multi-company login (base do futuro sistema odonto)  ::
-  ::  Schema      : OD - Odontologia                                              ::
-  ::  Object      : od.procedure_list(jsonb)                                      ::
-  ::  UsedBy      : Flutter -> supabase.schema('od').rpc('procedure_list')        ::
+  ::  Schema      : AD - Administrative (RPC exposta; dados no schema od)         ::
+  ::  Object      : ad.procedure_list(jsonb)                                      ::
+  ::  UsedBy      : Flutter -> supabase.schema('ad').rpc('procedure_list')        ::
   ::----------------------------------------------------------------------------::
   ::  Programmer  : Jose Carlos de Oliveira Junior                                ::
   ::  Date        : 14/10/2026                                                    ::
@@ -41,7 +41,7 @@
 
   Errors: VERSION_MISMATCH, PRICING_BRANCH_REQUIRED, PRICING_FORBIDDEN, PROCEDURE_LIST_REGIME_INVALID
 */
-create or replace function od.procedure_list(p_json jsonb)
+create or replace function ad.procedure_list(p_json jsonb)
 returns jsonb
 language plpgsql
 stable
@@ -186,5 +186,5 @@ begin
 end;
 $$;
 
-revoke all on function od.procedure_list(jsonb) from public, anon;
-grant execute on function od.procedure_list(jsonb) to authenticated;
+revoke all on function ad.procedure_list(jsonb) from public, anon;
+grant execute on function ad.procedure_list(jsonb) to authenticated;
