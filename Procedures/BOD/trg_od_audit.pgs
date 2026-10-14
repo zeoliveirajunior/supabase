@@ -37,3 +37,11 @@ create or replace trigger procedure_audit
 create or replace trigger procedure_material_audit
   before insert or update on od.procedure_material
   for each row execute function ad.trg_audit();
+
+create or replace trigger patient_audit
+  before insert or update on od.patient
+  for each row execute function ad.trg_audit();
+
+create or replace trigger patient_note_audit
+  before insert or update on od.patient_note
+  for each row execute function ad.trg_audit();

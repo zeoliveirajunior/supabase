@@ -9,7 +9,7 @@ procedimentos** — rodando em **Supabase** (PostgreSQL + Auth + PostgREST). Tr�
 | Schema | Papel | Exposto na API |
 |---|---|---|
 | `ad` (Administrative) | empresas, filiais, usuários, perfis, telas, logs | sim |
-| `od` (Odontologia) | tabelas e helpers do negócio; hoje: precificação (materiais, procedimentos, parâmetros) | **não** (o app só chega por RPC em `ad`) |
+| `od` (Odontologia) | tabelas e helpers do negócio; hoje: precificação (materiais, procedimentos, parâmetros) e pacientes (ficha + notas) | **não** (o app só chega por RPC em `ad`) |
 | `private` | helpers de RLS | **nunca** |
 
 **No futuro** o schema `od` recebe agenda, pacientes, prontuário, orçamentos e financeiro, sempre **em cima**
@@ -49,6 +49,8 @@ Objetos principais:
 | `ad.pricing_param_get` / `ad.pricing_param_save` | aba Parâmetros da tela Precificação |
 | `ad.material_list` / `ad.material_save` / `ad.procedure_list` / `ad.procedure_save` | CRUD da tela; `procedure_list` devolve o preço calculado |
 | `od.fn_pricing_calc` / `od.fn_pricing_context` | fórmula do preço (única fonte) e resumo da filial |
+| `od.patient` / `od.patient_note` | ficha do paciente (cadastro, contato/endereço, complementares, alerta de retorno) e notas gerais |
+| `ad.patient_list` / `ad.patient_get` / `ad.patient_save` / `ad.patient_note_save` | tela Pacientes: busca paginada, ficha completa, cadastro/alteração parcial, notas |
 | Edge Function `material-price-lookup` | pesquisa de preço de mercado de um material (Claude + web search; secret `ANTHROPIC_API_KEY`) |
 
 ---
@@ -310,6 +312,20 @@ grant execute on function ad.<entidade>_<acao>(jsonb) to authenticated;
 
 ---
 
+## Pacientes (schema `od`) — ficha
+
+Tela `PATIENTS` (uuid `0d6a1f3e-1b2c-4d5e-8f90-000000000006`). `od.patient` é a ficha completa, inspirada nas
+fichas clássicas de clínica: dados cadastrais, contato/endereço, complementares (prontuário, plano, filiação,
+representante legal) e alerta de retorno; `od.patient_note` são as notas gerais (exclusão lógica).
+Regras que valem para todo cadastro de pessoa daqui em diante:
+
+- Documentos, telefones e CEP são gravados **só com dígitos** (a máscara é do app); e-mail minúsculo; UF maiúscula.
+- `patient_save` normaliza antes de validar e faz update parcial (chave presente altera, `null` limpa, ausente mantém),
+  mesclando o JSON na linha atual com `jsonb_populate_record`. CPF validado por `ad.fn_cpf_is_valid` e único na filial.
+- A busca (`patient_list`) é por nome/apelido/e-mail (ILIKE, `%` como curinga) e, se o texto tiver dígitos, por CPF,
+  telefone e número do prontuário. Sempre paginada.
+- O `event_log` de pacientes não guarda dados pessoais: só nome, situação e quais campos mudaram.
+
 ## Precificação (schema `od`) — modelo e fórmula
 
 Consolidado das planilhas da clínica (custos → estrutura por hora → preço por procedimento), corrigindo
@@ -434,7 +450,7 @@ final filiais = await sb.schema('ad').from('branch').select('nr_company, nr_bran
 - Operações de plataforma (bloquear empresa, inativar usuário): fazer por service_role ou futura RPC
   restrita a `app_user.it_level = 100`.
 - Empresa ativa no JWT (Auth Hook de custom claims) para policies sem subquery — só se a performance pedir.
-- Próximos módulos do schema `od`: agenda, pacientes, prontuário, orçamentos (usando a precificação), financeiro.
+- Próximos módulos do schema `od`: agenda, prontuário/anamnese/odontograma (em cima de `od.patient`), orçamentos (usando a precificação), financeiro.
 - Storage para avatar/logo.
 - Deploy da Edge Function `material-price-lookup` em produção (depende do secret `SUPABASE_ACCESS_TOKEN`
   do workflow e do `ANTHROPIC_API_KEY` no projeto).
