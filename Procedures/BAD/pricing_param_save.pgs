@@ -24,7 +24,9 @@
     nr_branch   bigint   obrigatorio
     params      object   opcional {qt_rooms, qt_hours_week, qt_weeks_month, pc_occupancy,
                          vl_professional_hour, pc_card, pc_commission, it_tax_regime (1 PF | 2 PJ),
-                         pc_tax_pf, pc_tax_pj, pc_profit}   (percentuais em pontos: 4 = 4%)
+                         pc_tax_pf, pc_tax_pj, pc_profit,
+                         vl_structure_hour_manual (null = usar o calculo das despesas)}
+                         (percentuais em pontos: 4 = 4%)
     expenses    array    opcional [{vc_name, it_type (1..4), vl_amount}]
     fees        array    opcional [{vc_name, vc_hint, pc_rate, id_active}]
 
@@ -87,6 +89,13 @@ begin
   _p.pc_tax_pf            := coalesce((_in ->> 'pc_tax_pf')::numeric,            (_cur ->> 'pc_tax_pf')::numeric);
   _p.pc_tax_pj            := coalesce((_in ->> 'pc_tax_pj')::numeric,            (_cur ->> 'pc_tax_pj')::numeric);
   _p.pc_profit            := coalesce((_in ->> 'pc_profit')::numeric,            (_cur ->> 'pc_profit')::numeric);
+  /* chave presente com null limpa o valor manual (volta ao calculo) */
+  _p.vl_structure_hour_manual := case when _in ? 'vl_structure_hour_manual'
+                                      then (_in ->> 'vl_structure_hour_manual')::numeric
+                                      else (_cur ->> 'vl_structure_hour_manual')::numeric end;
+  if _p.vl_structure_hour_manual is not null and _p.vl_structure_hour_manual < 0 then
+    raise exception '%', ad.fn_message('PRICING_PARAM_INVALID', jsonb_build_object('Field', 'vl_structure_hour_manual'));
+  end if;
 
   if _p.qt_rooms is null or _p.qt_rooms < 1 then
     raise exception '%', ad.fn_message('PRICING_PARAM_INVALID', jsonb_build_object('Field', 'qt_rooms'));
@@ -157,10 +166,12 @@ begin
   /* grava -------------------------------------------------------------------*/
   insert into od.pricing_param (
     nr_company, nr_branch, qt_rooms, qt_hours_week, qt_weeks_month, pc_occupancy,
-    vl_professional_hour, pc_card, pc_commission, it_tax_regime, pc_tax_pf, pc_tax_pj, pc_profit, nr_operator)
+    vl_professional_hour, pc_card, pc_commission, it_tax_regime, pc_tax_pf, pc_tax_pj, pc_profit,
+    vl_structure_hour_manual, nr_operator)
   values (
     _nr_company, _nr_branch, _p.qt_rooms, _p.qt_hours_week, _p.qt_weeks_month, _p.pc_occupancy,
-    _p.vl_professional_hour, _p.pc_card, _p.pc_commission, _p.it_tax_regime, _p.pc_tax_pf, _p.pc_tax_pj, _p.pc_profit, _nr_user)
+    _p.vl_professional_hour, _p.pc_card, _p.pc_commission, _p.it_tax_regime, _p.pc_tax_pf, _p.pc_tax_pj, _p.pc_profit,
+    _p.vl_structure_hour_manual, _nr_user)
   on conflict (nr_company, nr_branch) do update set
     qt_rooms             = excluded.qt_rooms,
     qt_hours_week        = excluded.qt_hours_week,
@@ -172,7 +183,8 @@ begin
     it_tax_regime        = excluded.it_tax_regime,
     pc_tax_pf            = excluded.pc_tax_pf,
     pc_tax_pj            = excluded.pc_tax_pj,
-    pc_profit            = excluded.pc_profit;
+    pc_profit            = excluded.pc_profit,
+    vl_structure_hour_manual = excluded.vl_structure_hour_manual;
 
   if p_json ? 'expenses' then
     delete from od.clinic_expense e where e.nr_company = _nr_company and e.nr_branch = _nr_branch;

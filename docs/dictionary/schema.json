@@ -241,7 +241,8 @@
           "values": { "1": "Pessoa física (IR sobre o lucro, carnê-leão)", "2": "Pessoa jurídica (tributos sobre o faturamento)" } },
         { "name": "pc_tax_pf", "type": "numeric(5,2)", "nullable": false, "default": "27.5", "description": "Imposto de renda pessoa física (%): incide sobre o lucro do procedimento (receita − custos − taxas). Padrão 27,5% = faixa máxima do carnê-leão; use a alíquota efetiva." },
         { "name": "pc_tax_pj", "type": "numeric(5,2)", "nullable": false, "default": "11.33", "description": "Tributos pessoa jurídica (%): alíquota efetiva do regime sobre o faturamento (Simples Nacional: 6% a 15,5%; Lucro Presumido: 11,33% + ISS). Padrão 11,33%." },
-        { "name": "pc_profit", "type": "numeric(5,2)", "nullable": false, "default": "30", "description": "Lucro desejado padrão (% sobre o preço). Cada procedimento pode ter o seu próprio (procedure.pc_profit)." }
+        { "name": "pc_profit", "type": "numeric(5,2)", "nullable": false, "default": "30", "description": "Lucro desejado padrão (% sobre o preço). Cada procedimento pode ter o seu próprio (procedure.pc_profit)." },
+        { "name": "vl_structure_hour_manual", "type": "numeric(12,2)", "nullable": true, "description": "Custo da estrutura por hora informado manualmente (R$/h). Quando preenchido substitui o cálculo (custo mensal ÷ horas produtivas), como a planilha original que digitava R$ 30 sobre os R$ 30,36 calculados. Nulo = usa o cálculo." }
       ]
     },
     {
@@ -449,7 +450,7 @@
       "description": "Aba Parâmetros da precificação: parâmetros da filial (ou padrões sugeridos quando ainda não salvos), resumo calculado (custo mensal, horas produtivas, custo da estrutura por hora, soma das taxas ativas, IR do regime), despesas, taxas adicionais e a permissão do usuário na tela PRICING. Exige leitura na tela PRICING.",
       "errors": ["VERSION_MISMATCH", "PRICING_BRANCH_REQUIRED", "PRICING_FORBIDDEN"] },
     { "name": "pricing_param_save", "signature": "ad.pricing_param_save(p_json jsonb)", "kind": "rpc", "grant": "authenticated",
-      "description": "Salva parâmetros (parcial), despesas e taxas adicionais (listas substituídas) da filial; valida que os percentuais do regime deixam divisor positivo. Permissão criar (1ª vez) / alterar na tela PRICING. Grava event_log.",
+      "description": "Salva parâmetros (parcial; vl_structure_hour_manual null volta ao cálculo), despesas e taxas adicionais (listas substituídas) da filial; valida que os percentuais do regime deixam divisor positivo. Permissão criar (1ª vez) / alterar na tela PRICING. Grava event_log.",
       "errors": ["VERSION_MISMATCH", "PRICING_BRANCH_REQUIRED", "PRICING_FORBIDDEN", "PRICING_PARAM_INVALID", "PRICING_EXPENSES_INVALID", "PRICING_EXPENSE_NAME_REQUIRED", "PRICING_EXPENSE_TYPE_INVALID", "PRICING_EXPENSE_AMOUNT_INVALID", "PRICING_FEES_INVALID", "PRICING_FEE_NAME_REQUIRED", "PRICING_FEE_RATE_INVALID", "PRICING_PERCENT_TOO_HIGH"] },
     { "name": "material_list", "signature": "ad.material_list(p_json jsonb)", "kind": "rpc", "grant": "authenticated",
       "description": "Catálogo de materiais da filial com o custo por unidade de uso e em quantos procedimentos cada um é usado. Filtros: id_include_inactive, vc_search. Exige leitura na tela PRICING.",
@@ -466,7 +467,7 @@
     { "name": "fn_pricing_calc", "signature": "od.fn_pricing_calc(p_json jsonb)", "kind": "helper", "grant": "interna",
       "description": "Fórmula do preço: custo direto = materiais + laboratório + tempo × estrutura/h + tempo × hora clínica; preço = custo ÷ (1 − cartão − comissão − taxas − IR − lucro) no regime PJ (IR sobre o faturamento) ou (1 − IR) × custo ÷ ((1 − IR)(1 − cartão − comissão − taxas) − lucro) no regime PF (IR sobre o lucro); preço mínimo com lucro zero. Devolve a decomposição e id_valid." },
     { "name": "fn_pricing_context", "signature": "od.fn_pricing_context(p_nr_company bigint, p_nr_branch bigint)", "kind": "helper", "grant": "interna",
-      "description": "Parâmetros da filial (ou padrões) e resumo: custo mensal das despesas (eventuais ÷ 12), horas por mês, horas produtivas, custo da estrutura por hora, soma das taxas ativas e IR do regime." },
+      "description": "Parâmetros da filial (ou padrões) e resumo: custo mensal das despesas (eventuais ÷ 12), horas por mês, horas produtivas, custo da estrutura por hora (calculado e o efetivo, que pode ser o valor manual), soma das taxas ativas e IR do regime." },
     { "name": "fn_screen_permission", "signature": "ad.fn_screen_permission(p_nr_company bigint, p_nr_branch bigint, p_vc_screen text)", "kind": "helper", "grant": "interna",
       "description": "Permissão efetiva do usuário logado numa tela e filial ({id_read, id_create, id_update}): filial acessível + nível 100 ou união das linhas de access_profile_screen dos perfis do usuário. Usada pelas RPCs de negócio (schema od)." }
   ]

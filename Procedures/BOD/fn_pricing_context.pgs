@@ -42,6 +42,7 @@ declare
   _vl_monthly        numeric;
   _qt_hours_month    numeric;
   _qt_productive     numeric;
+  _vl_structure_calc numeric;
   _vl_structure_hour numeric;
   _pc_fees           numeric := 0;
   _pc_tax            numeric;
@@ -66,6 +67,7 @@ begin
     _p.pc_tax_pf            := 27.5;
     _p.pc_tax_pj            := 11.33;
     _p.pc_profit            := 30;
+    _p.vl_structure_hour_manual := null;
   end if;
 
   select coalesce(sum(case when e.it_type = 1 then e.vl_amount end), 0),
@@ -88,7 +90,9 @@ begin
   _vl_monthly        := _vl_fixed + _vl_variable + _vl_annual / 12 + _vl_marketing;
   _qt_hours_month    := _p.qt_rooms * _p.qt_hours_week * _p.qt_weeks_month;
   _qt_productive     := _qt_hours_month * _p.pc_occupancy / 100;
-  _vl_structure_hour := case when _qt_productive > 0 then round(_vl_monthly / _qt_productive, 2) else 0 end;
+  _vl_structure_calc := case when _qt_productive > 0 then round(_vl_monthly / _qt_productive, 2) else 0 end;
+  /* valor manual (como na planilha original, que digitava R$ 30 sobre os R$ 30,36 calculados) */
+  _vl_structure_hour := coalesce(_p.vl_structure_hour_manual, _vl_structure_calc);
   _pc_tax            := case when _p.it_tax_regime = 2 then _p.pc_tax_pj else _p.pc_tax_pf end;
 
   return jsonb_build_object(
@@ -106,6 +110,7 @@ begin
       'pc_tax_pf',            _p.pc_tax_pf,
       'pc_tax_pj',            _p.pc_tax_pj,
       'pc_profit',            _p.pc_profit,
+      'vl_structure_hour_manual', _p.vl_structure_hour_manual,
       'id_saved',             _id_saved),
     'summary', jsonb_build_object(
       'vl_fixed_monthly',     round(_vl_fixed, 2),
@@ -116,6 +121,7 @@ begin
       'qt_hours_month',       round(_qt_hours_month, 2),
       'qt_productive_hours',  round(_qt_productive, 2),
       'vl_structure_hour',    _vl_structure_hour,
+      'vl_structure_hour_calc', _vl_structure_calc,
       'pc_fees',              _pc_fees,
       'pc_tax',               _pc_tax,
       'pc_total',             _p.pc_card + _p.pc_commission + _pc_fees + _pc_tax + _p.pc_profit));
