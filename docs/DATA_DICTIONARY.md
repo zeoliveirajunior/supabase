@@ -1,6 +1,6 @@
 # Dicionário de dados — Supabase multi-company login
 
-> Base multi-empresa / multi-filial do futuro sistema de odontologia. Schema **`ad`** (AD - Administrative). Atualizado em 2026-10-13.
+> Base multi-empresa / multi-filial do futuro sistema de odontologia. Schemas: **`ad`** (AD - Administrative (empresas, filiais, usuários, perfis, telas, logs)), **`od`** (OD - Odontologia (precificação)), **`private`** (helpers de RLS, fora da API). Atualizado em 2026-10-14.
 >
 > **Gerado** por `node tools/gen-dictionary.mjs` a partir de [`docs/dictionary/schema.json`](dictionary/schema.json). Não edite este arquivo à mão.
 > Viewer interativo: abra [`docs/dictionary/index.html`](dictionary/index.html) no navegador.
@@ -45,6 +45,12 @@ Colunas de auditoria em **toda** tabela (preenchidas pelo trigger `ad.trg_audit`
 | [`ad.screen`](#adscreen) | Tela do app | Catálogo GLOBAL das telas do app (não depende de empresa). O uuid é a chave da permissão e é o mesmo em todos os ambientes (seed com uuids fixos); o código é usado pelo app para rotear e o nome é o que aparece para o usuário. DASHBOARD é implícita para todo usuário logado. |
 | [`ad.access_profile_screen`](#adaccessprofilescreen) | Permissão do perfil por tela | Linha existe = o perfil pode LER a tela; id_create e id_update liberam criar e alterar. Perfil de nível 100 (administrador) ignora esta tabela: tem tudo. Substituída inteira por access_profile_save (screens). |
 | [`ad.event_log`](#adeventlog) | Log de atividades | O que aconteceu no sistema: quem, quando, em qual tela, qual ação, qual registro, resumo legível e detalhe em JSON (nunca senhas). Gravado pelas RPCs via ad.fn_event_log; o app nunca escreve. Login/acesso fica em access_log. |
+| [`od.pricing_param`](#odpricingparam) | Parâmetros de precificação | Parâmetros de precificação da filial: estrutura (salas, horas, ocupação), hora clínica do profissional, taxa de cartão, comissão padrão, regime do imposto de renda (PF/PJ) e lucro desejado. Uma linha por filial, criada no primeiro salvamento (pricing_param_save); antes disso pricing_param_get devolve os padrões sugeridos. Percentuais em pontos percentuais (4 = 4%). |
+| [`od.clinic_expense`](#odclinicexpense) | Despesa da clínica | Despesas que formam o custo mensal da clínica (custo da estrutura): fixas mensais, variáveis mensais, eventuais anuais (divididas por 12) e publicidade mensal. Custo da estrutura por hora = custo mensal ÷ horas produtivas. A lista inteira é substituída a cada pricing_param_save. |
+| [`od.pricing_fee`](#odpricingfee) | Taxa adicional de precificação | Taxas adicionais sobre o preço que a clínica liga ou desliga por filial (ISS, inadimplência, antecipação de recebíveis, garantia/retrabalho, margem de negociação, convênios...). Só as ativas entram no cálculo (somadas aos percentuais sobre o preço). pricing_param_get sugere uma lista inicial; a lista inteira é substituída a cada pricing_param_save. |
+| [`od.material`](#odmaterial) | Material | Catálogo de materiais da filial. Custo por unidade de uso = preço da embalagem ÷ (rendimento × (1 − perda)). O preço pode ser digitado ou vir da pesquisa de mercado (Edge Function material-price-lookup), com a loja/URL de origem e a data da última atualização. |
+| [`od.procedure`](#odprocedure) | Procedimento | Procedimento precificado: tempo de cadeira, laboratório/terceiros, outros materiais (valor informado), valor cobrado hoje (só comparação) e, opcionalmente, comissão e lucro próprios. O preço não é gravado: procedure_list calcula sempre com os parâmetros atuais (od.fn_pricing_calc). |
+| [`od.procedure_material`](#odprocedurematerial) | Material do procedimento | Materiais usados em cada procedimento com a quantidade em unidades de uso. Custo da linha = quantidade × custo unitário do material. A lista é substituída a cada procedure_save com materials. |
 
 ## Diagrama (ERD)
 
@@ -63,6 +69,13 @@ erDiagram
   company_user ||--o{ branch_user_profile : "perfis nas filiais"
   access_profile ||--o{ branch_user_profile : "perfil atribuído"
   app_user ||--o{ access_log : "acessos"
+  branch ||--o| pricing_param : "parâmetros de preço"
+  branch ||--o{ clinic_expense : "despesas"
+  branch ||--o{ pricing_fee : "taxas adicionais"
+  branch ||--o{ material : "materiais"
+  branch ||--o{ procedure : "procedimentos"
+  procedure ||--o{ procedure_material : "usa materiais"
+  material ||--o{ procedure_material : "usado em"
   auth_users {
     uuid id PK
     text email
@@ -188,6 +201,76 @@ erDiagram
     varchar vc_summary
     jsonb js_detail
     timestamptz dh_event
+  }
+  pricing_param {
+    bigint nr_company PK, FK
+    bigint nr_branch PK, FK
+    smallint qt_rooms
+    numeric qt_hours_week
+    numeric qt_weeks_month
+    numeric pc_occupancy
+    numeric vl_professional_hour
+    numeric pc_card
+    numeric pc_commission
+    smallint it_tax_regime
+    numeric pc_tax_pf
+    numeric pc_tax_pj
+    numeric pc_profit
+  }
+  clinic_expense {
+    bigint nr_company PK, FK
+    bigint nr_branch PK, FK
+    bigint nr_expense PK
+    varchar vc_name
+    smallint it_type
+    numeric vl_amount
+    smallint it_status
+  }
+  pricing_fee {
+    bigint nr_company PK, FK
+    bigint nr_branch PK, FK
+    bigint nr_fee PK
+    varchar vc_name
+    varchar vc_hint
+    numeric pc_rate
+    boolean id_active
+  }
+  material {
+    bigint nr_company PK, FK
+    bigint nr_branch PK, FK
+    bigint nr_material PK
+    varchar vc_name UK
+    varchar vc_package
+    numeric vl_package_price
+    numeric qt_yield
+    varchar vc_unit
+    numeric pc_waste
+    smallint it_price_source
+    varchar vc_price_source
+    timestamptz dh_price_updated
+    smallint it_status
+  }
+  procedure {
+    bigint nr_company PK, FK
+    bigint nr_branch PK, FK
+    bigint nr_procedure PK
+    varchar vc_code UK
+    varchar vc_name UK
+    varchar vc_category
+    numeric qt_minutes
+    numeric vl_lab_cost
+    numeric vl_material_other
+    numeric vl_current_price
+    numeric pc_commission
+    numeric pc_profit
+    smallint it_status
+  }
+  procedure_material {
+    bigint nr_company PK, FK
+    bigint nr_branch PK, FK
+    bigint nr_procedure PK, FK
+    bigint nr_material PK, FK
+    numeric qt_used
   }
 ```
 
@@ -435,9 +518,151 @@ O que aconteceu no sistema: quem, quando, em qual tela, qual ação, qual regist
 | `dh_created` | `timestamptz` |  | NOT NULL | `now()` | Data/hora de inclusão do registro (trigger ad.trg_audit; nunca muda). |
 | `dh_updated` | `timestamptz` |  | NOT NULL | `now()` | Data/hora da última atualização (trigger ad.trg_audit). |
 
+### od.pricing_param
+
+**Parâmetros de precificação**
+
+Parâmetros de precificação da filial: estrutura (salas, horas, ocupação), hora clínica do profissional, taxa de cartão, comissão padrão, regime do imposto de renda (PF/PJ) e lucro desejado. Uma linha por filial, criada no primeiro salvamento (pricing_param_save); antes disso pricing_param_get devolve os padrões sugeridos. Percentuais em pontos percentuais (4 = 4%).
+
+**RLS:** SELECT: filiais acessíveis (private.fn_my_branches). Escrita só via pricing_param_save (permissão na tela PRICING).
+
+| Coluna | Tipo | Chave | Nulo | Default | Descrição |
+|---|---|---|---|---|---|
+| `nr_company` | `bigint` | PK1, FK → `branch.nr_company` | NOT NULL |  | Número da empresa. |
+| `nr_branch` | `bigint` | PK2, FK → `branch.nr_branch` | NOT NULL |  | Número da filial. |
+| `qt_rooms` | `smallint` |  | NOT NULL | `1` | Salas (cadeiras) em uso na filial. |
+| `qt_hours_week` | `numeric(6,2)` |  | NOT NULL | `40` | Horas de atendimento por semana, por sala. |
+| `qt_weeks_month` | `numeric(4,2)` |  | NOT NULL | `4.33` | Semanas por mês (4,33 = 52 ÷ 12). |
+| `pc_occupancy` | `numeric(5,2)` |  | NOT NULL | `70` | Taxa de ocupação da agenda (%): parte das horas abertas que realmente vira atendimento. Horas produtivas = horas abertas × ocupação. |
+| `vl_professional_hour` | `numeric(12,2)` |  | NOT NULL | `0` | Hora clínica do profissional (R$/h): remuneração do dentista por hora de cadeira, entra no custo direto. |
+| `pc_card` | `numeric(5,2)` |  | NOT NULL | `4` | Taxa média da máquina de cartão (% sobre o preço; média de débito/crédito/parcelado). |
+| `pc_commission` | `numeric(5,2)` |  | NOT NULL | `0` | Comissão padrão (% sobre o preço), ex.: recepção/captação. Cada procedimento pode ter a sua própria (procedure.pc_commission). |
+| `it_tax_regime` | `smallint` |  | NOT NULL | `1` | Regime do imposto de renda usado no preço. Valores: 1 = Pessoa física (IR sobre o lucro, carnê-leão); 2 = Pessoa jurídica (tributos sobre o faturamento). |
+| `pc_tax_pf` | `numeric(5,2)` |  | NOT NULL | `27.5` | Imposto de renda pessoa física (%): incide sobre o lucro do procedimento (receita − custos − taxas). Padrão 27,5% = faixa máxima do carnê-leão; use a alíquota efetiva. |
+| `pc_tax_pj` | `numeric(5,2)` |  | NOT NULL | `11.33` | Tributos pessoa jurídica (%): alíquota efetiva do regime sobre o faturamento (Simples Nacional: 6% a 15,5%; Lucro Presumido: 11,33% + ISS). Padrão 11,33%. |
+| `pc_profit` | `numeric(5,2)` |  | NOT NULL | `30` | Lucro desejado padrão (% sobre o preço). Cada procedimento pode ter o seu próprio (procedure.pc_profit). |
+| `nr_operator` | `bigint` |  | NULL |  | Usuário (ad.app_user.nr_user) da última alteração. Preenchido pelo trigger ad.trg_audit. |
+| `dh_created` | `timestamptz` |  | NOT NULL | `now()` | Data/hora de inclusão do registro (trigger ad.trg_audit; nunca muda). |
+| `dh_updated` | `timestamptz` |  | NOT NULL | `now()` | Data/hora da última atualização (trigger ad.trg_audit). |
+
+### od.clinic_expense
+
+**Despesa da clínica**
+
+Despesas que formam o custo mensal da clínica (custo da estrutura): fixas mensais, variáveis mensais, eventuais anuais (divididas por 12) e publicidade mensal. Custo da estrutura por hora = custo mensal ÷ horas produtivas. A lista inteira é substituída a cada pricing_param_save.
+
+**RLS:** SELECT: filiais acessíveis (private.fn_my_branches). Escrita só via pricing_param_save.
+
+| Coluna | Tipo | Chave | Nulo | Default | Descrição |
+|---|---|---|---|---|---|
+| `nr_company` | `bigint` | PK1, FK → `branch.nr_company` | NOT NULL |  | Número da empresa. |
+| `nr_branch` | `bigint` | PK2, FK → `branch.nr_branch` | NOT NULL |  | Número da filial. |
+| `nr_expense` | `bigint` | PK3 | NOT NULL |  | Número sequencial da despesa na filial. |
+| `vc_name` | `varchar(60)` |  | NOT NULL |  | Nome da despesa (Aluguel, Energia, Salários...). |
+| `it_type` | `smallint` |  | NOT NULL | `1` | Tipo da despesa. Valores: 1 = Fixa mensal; 2 = Variável mensal; 3 = Eventual anual (÷ 12 no custo mensal); 4 = Publicidade mensal. |
+| `vl_amount` | `numeric(12,2)` |  | NOT NULL | `0` | Valor (mensal, ou anual quando it_type = 3). |
+| `it_status` | `smallint` |  | NOT NULL | `1` | Situação da despesa. Valores: 1 = Ativa; 90 = Inativa. |
+| `nr_operator` | `bigint` |  | NULL |  | Usuário (ad.app_user.nr_user) da última alteração. Preenchido pelo trigger ad.trg_audit. |
+| `dh_created` | `timestamptz` |  | NOT NULL | `now()` | Data/hora de inclusão do registro (trigger ad.trg_audit; nunca muda). |
+| `dh_updated` | `timestamptz` |  | NOT NULL | `now()` | Data/hora da última atualização (trigger ad.trg_audit). |
+
+### od.pricing_fee
+
+**Taxa adicional de precificação**
+
+Taxas adicionais sobre o preço que a clínica liga ou desliga por filial (ISS, inadimplência, antecipação de recebíveis, garantia/retrabalho, margem de negociação, convênios...). Só as ativas entram no cálculo (somadas aos percentuais sobre o preço). pricing_param_get sugere uma lista inicial; a lista inteira é substituída a cada pricing_param_save.
+
+**RLS:** SELECT: filiais acessíveis (private.fn_my_branches). Escrita só via pricing_param_save.
+
+| Coluna | Tipo | Chave | Nulo | Default | Descrição |
+|---|---|---|---|---|---|
+| `nr_company` | `bigint` | PK1, FK → `branch.nr_company` | NOT NULL |  | Número da empresa. |
+| `nr_branch` | `bigint` | PK2, FK → `branch.nr_branch` | NOT NULL |  | Número da filial. |
+| `nr_fee` | `bigint` | PK3 | NOT NULL |  | Número sequencial da taxa na filial. |
+| `vc_name` | `varchar(60)` |  | NOT NULL |  | Nome da taxa (ISS, Inadimplência...). |
+| `vc_hint` | `varchar(200)` |  | NULL |  | Explicação curta mostrada na tela (quando usar, faixa típica). |
+| `pc_rate` | `numeric(5,2)` |  | NOT NULL | `0` | Percentual sobre o preço (pontos percentuais). |
+| `id_active` | `boolean` |  | NOT NULL | `false` | Entra no cálculo do preço? |
+| `nr_operator` | `bigint` |  | NULL |  | Usuário (ad.app_user.nr_user) da última alteração. Preenchido pelo trigger ad.trg_audit. |
+| `dh_created` | `timestamptz` |  | NOT NULL | `now()` | Data/hora de inclusão do registro (trigger ad.trg_audit; nunca muda). |
+| `dh_updated` | `timestamptz` |  | NOT NULL | `now()` | Data/hora da última atualização (trigger ad.trg_audit). |
+
+### od.material
+
+**Material**
+
+Catálogo de materiais da filial. Custo por unidade de uso = preço da embalagem ÷ (rendimento × (1 − perda)). O preço pode ser digitado ou vir da pesquisa de mercado (Edge Function material-price-lookup), com a loja/URL de origem e a data da última atualização.
+
+**RLS:** SELECT: filiais acessíveis (private.fn_my_branches). Escrita só via material_save (permissão na tela PRICING).
+
+| Coluna | Tipo | Chave | Nulo | Default | Descrição |
+|---|---|---|---|---|---|
+| `nr_company` | `bigint` | PK1, FK → `branch.nr_company` | NOT NULL |  | Número da empresa. |
+| `nr_branch` | `bigint` | PK2, FK → `branch.nr_branch` | NOT NULL |  | Número da filial. |
+| `nr_material` | `bigint` | PK3 | NOT NULL |  | Número sequencial do material na filial. |
+| `vc_name` | `varchar(80)` | UK | NOT NULL |  | Nome do material (único na filial, sem diferenciar maiúsculas). |
+| `vc_package` | `varchar(40)` |  | NULL |  | Embalagem comprada (ex.: Caixa 100, Seringa 4 g). |
+| `vl_package_price` | `numeric(12,2)` |  | NOT NULL | `0` | Preço da embalagem (R$). |
+| `qt_yield` | `numeric(10,3)` |  | NOT NULL | `1` | Rendimento: quantas unidades de uso a embalagem rende (ex.: caixa com 100 luvas = 100; seringa de 4 g usada 0,1 g por vez = 40). |
+| `vc_unit` | `varchar(20)` |  | NULL |  | Unidade de uso (unidade, par, g, ml, aplicação...). |
+| `pc_waste` | `numeric(5,2)` |  | NOT NULL | `0` | Perda / desperdício (%), reduz o rendimento efetivo. |
+| `it_price_source` | `smallint` |  | NOT NULL | `1` | Origem do preço. Valores: 1 = Manual (digitado); 2 = Pesquisa de mercado (Edge Function material-price-lookup). |
+| `vc_price_source` | `varchar(200)` |  | NULL |  | Loja / URL de onde o preço veio. |
+| `dh_price_updated` | `timestamptz` |  | NULL |  | Data/hora da última atualização de preço, rendimento ou perda. |
+| `it_status` | `smallint` |  | NOT NULL | `1` | Situação do material. Valores: 1 = Ativo; 90 = Inativo. |
+| `nr_operator` | `bigint` |  | NULL |  | Usuário (ad.app_user.nr_user) da última alteração. Preenchido pelo trigger ad.trg_audit. |
+| `dh_created` | `timestamptz` |  | NOT NULL | `now()` | Data/hora de inclusão do registro (trigger ad.trg_audit; nunca muda). |
+| `dh_updated` | `timestamptz` |  | NOT NULL | `now()` | Data/hora da última atualização (trigger ad.trg_audit). |
+
+### od.procedure
+
+**Procedimento**
+
+Procedimento precificado: tempo de cadeira, laboratório/terceiros, outros materiais (valor informado), valor cobrado hoje (só comparação) e, opcionalmente, comissão e lucro próprios. O preço não é gravado: procedure_list calcula sempre com os parâmetros atuais (od.fn_pricing_calc).
+
+**RLS:** SELECT: filiais acessíveis (private.fn_my_branches). Escrita só via procedure_save (permissão na tela PRICING).
+
+| Coluna | Tipo | Chave | Nulo | Default | Descrição |
+|---|---|---|---|---|---|
+| `nr_company` | `bigint` | PK1, FK → `branch.nr_company` | NOT NULL |  | Número da empresa. |
+| `nr_branch` | `bigint` | PK2, FK → `branch.nr_branch` | NOT NULL |  | Número da filial. |
+| `nr_procedure` | `bigint` | PK3 | NOT NULL |  | Número sequencial do procedimento na filial. |
+| `vc_code` | `varchar(10)` | UK | NULL |  | Código da tabela da clínica (ex.: 3.1). Único na filial quando informado. |
+| `vc_name` | `varchar(80)` | UK | NOT NULL |  | Nome do procedimento (único na filial). |
+| `vc_category` | `varchar(40)` |  | NULL |  | Categoria / especialidade (Clínica Geral, Ortodontia, Implante, HOF...). |
+| `qt_minutes` | `numeric(7,2)` |  | NOT NULL | `0` | Tempo de cadeira em minutos: define o custo da estrutura e a hora clínica do profissional. |
+| `vl_lab_cost` | `numeric(12,2)` |  | NOT NULL | `0` | Laboratório / terceiros (R$), entra no custo direto. |
+| `vl_material_other` | `numeric(12,2)` |  | NOT NULL | `0` | Outros materiais (R$ informado), somado aos materiais cadastrados. |
+| `vl_current_price` | `numeric(12,2)` |  | NULL |  | Valor cobrado hoje (R$), só para comparar com o preço sugerido. |
+| `pc_commission` | `numeric(5,2)` |  | NULL |  | Comissão própria (% sobre o preço). Nula = usa pricing_param.pc_commission. |
+| `pc_profit` | `numeric(5,2)` |  | NULL |  | Lucro desejado próprio (% sobre o preço). Nulo = usa pricing_param.pc_profit. |
+| `it_status` | `smallint` |  | NOT NULL | `1` | Situação do procedimento. Valores: 1 = Ativo; 90 = Inativo. |
+| `nr_operator` | `bigint` |  | NULL |  | Usuário (ad.app_user.nr_user) da última alteração. Preenchido pelo trigger ad.trg_audit. |
+| `dh_created` | `timestamptz` |  | NOT NULL | `now()` | Data/hora de inclusão do registro (trigger ad.trg_audit; nunca muda). |
+| `dh_updated` | `timestamptz` |  | NOT NULL | `now()` | Data/hora da última atualização (trigger ad.trg_audit). |
+
+### od.procedure_material
+
+**Material do procedimento**
+
+Materiais usados em cada procedimento com a quantidade em unidades de uso. Custo da linha = quantidade × custo unitário do material. A lista é substituída a cada procedure_save com materials.
+
+**RLS:** SELECT: filiais acessíveis (private.fn_my_branches). Escrita só via procedure_save.
+
+| Coluna | Tipo | Chave | Nulo | Default | Descrição |
+|---|---|---|---|---|---|
+| `nr_company` | `bigint` | PK1, FK → `procedure.nr_company` | NOT NULL |  | Número da empresa. |
+| `nr_branch` | `bigint` | PK2, FK → `procedure.nr_branch` | NOT NULL |  | Número da filial. |
+| `nr_procedure` | `bigint` | PK3, FK → `procedure.nr_procedure` | NOT NULL |  | Procedimento. |
+| `nr_material` | `bigint` | PK4, FK → `material.nr_material` | NOT NULL |  | Material usado. |
+| `qt_used` | `numeric(10,3)` |  | NOT NULL | `1` | Quantidade usada, em unidades de uso do material (> 0). |
+| `nr_operator` | `bigint` |  | NULL |  | Usuário (ad.app_user.nr_user) da última alteração. Preenchido pelo trigger ad.trg_audit. |
+| `dh_created` | `timestamptz` |  | NOT NULL | `now()` | Data/hora de inclusão do registro (trigger ad.trg_audit; nunca muda). |
+| `dh_updated` | `timestamptz` |  | NOT NULL | `now()` | Data/hora da última atualização (trigger ad.trg_audit). |
+
 ## Functions
 
-Contrato das RPC: `p_json jsonb` de entrada (sempre com `nr_version`), `jsonb` de saída, erros via `RAISE EXCEPTION` com `ad.fn_message` (`{"Message": "CHAVE", "Parameters": {...}}`). Chamada no Flutter: `supabase.schema('ad').rpc('<nome>', params: {'p_json': {...}})`.
+Contrato das RPC: `p_json jsonb` de entrada (sempre com `nr_version`), `jsonb` de saída, erros via `RAISE EXCEPTION` com `ad.fn_message` (`{"Message": "CHAVE", "Parameters": {...}}`). Chamada no Flutter: `supabase.schema('<schema>').rpc('<nome>', params: {'p_json': {...}})` (`ad` ou `od`, conforme a assinatura).
 
 ### RPC (expostas ao app)
 
@@ -458,6 +683,12 @@ Contrato das RPC: `p_json jsonb` de entrada (sempre com `nr_version`), `jsonb` d
 | `ad.screen_list(p_json jsonb)` | authenticated | Catálogo de telas ativas do app na ordem do menu (uuid, código, nome, grupo). Qualquer usuário logado. |
 | `ad.event_log_list(p_json jsonb)` | authenticated | Log de atividades paginado no contexto da empresa (padrão: últimos 30 dias), pesquisável por tela, ação, usuário, texto e período. Administrador vê a empresa; usuário comum só os próprios eventos. |
 | `ad.user_create_check(p_json jsonb)` | authenticated | Pré-checagem do cadastro de usuário pela empresa, usada pela Edge Function user-create antes de criar a conta no Auth: administrador?, e-mail válido?, já vinculado?, conta já existe? |
+| `od.pricing_param_get(p_json jsonb)` | authenticated | Aba Parâmetros da precificação: parâmetros da filial (ou padrões sugeridos quando ainda não salvos), resumo calculado (custo mensal, horas produtivas, custo da estrutura por hora, soma das taxas ativas, IR do regime), despesas, taxas adicionais e a permissão do usuário na tela PRICING. Exige leitura na tela PRICING. |
+| `od.pricing_param_save(p_json jsonb)` | authenticated | Salva parâmetros (parcial), despesas e taxas adicionais (listas substituídas) da filial; valida que os percentuais do regime deixam divisor positivo. Permissão criar (1ª vez) / alterar na tela PRICING. Grava event_log. |
+| `od.material_list(p_json jsonb)` | authenticated | Catálogo de materiais da filial com o custo por unidade de uso e em quantos procedimentos cada um é usado. Filtros: id_include_inactive, vc_search. Exige leitura na tela PRICING. |
+| `od.material_save(p_json jsonb)` | authenticated | Cria (I, permissão criar) ou atualiza parcialmente (U, permissão alterar) um material: embalagem, preço, rendimento, unidade, perda, origem do preço (manual / pesquisa de mercado), situação. Grava event_log. |
+| `od.procedure_list(p_json jsonb)` | authenticated | Procedimentos da filial com materiais, preço calculado (fn_pricing_calc), preço mínimo, decomposição (cartão, comissão, taxas, IR, lucro) e alertas (NO_TIME, NO_MATERIAL, MATERIAL_NO_PRICE, PERCENT_TOO_HIGH). it_tax_regime simula PF x PJ. Devolve também parâmetros, resumo e categorias. Exige leitura na tela PRICING. |
+| `od.procedure_save(p_json jsonb)` | authenticated | Cria (I, permissão criar) ou atualiza parcialmente (U, permissão alterar) um procedimento e, quando materials está presente, substitui seus materiais x quantidades. Grava event_log. |
 
 ### Helpers (regras compartilhadas / RLS)
 
@@ -477,6 +708,9 @@ Contrato das RPC: `p_json jsonb` de entrada (sempre com `nr_version`), `jsonb` d
 | `ad.fn_cnpj_normalize(p_vc_cnpj text)` | interna | Remove pontuação, maiúsculas, NULL para vazio. |
 | `ad.fn_cpf_is_valid(p_vc_cpf text)` | interna | Dígitos verificadores do CPF. |
 | `ad.fn_email_is_valid(p_vc_email text)` | interna | Validação sintática mínima de e-mail de contato. |
+| `od.fn_pricing_calc(p_json jsonb)` | interna | Fórmula do preço: custo direto = materiais + laboratório + tempo × estrutura/h + tempo × hora clínica; preço = custo ÷ (1 − cartão − comissão − taxas − IR − lucro) no regime PJ (IR sobre o faturamento) ou (1 − IR) × custo ÷ ((1 − IR)(1 − cartão − comissão − taxas) − lucro) no regime PF (IR sobre o lucro); preço mínimo com lucro zero. Devolve a decomposição e id_valid. |
+| `od.fn_pricing_context(p_nr_company bigint, p_nr_branch bigint)` | interna | Parâmetros da filial (ou padrões) e resumo: custo mensal das despesas (eventuais ÷ 12), horas por mês, horas produtivas, custo da estrutura por hora, soma das taxas ativas e IR do regime. |
+| `ad.fn_screen_permission(p_nr_company bigint, p_nr_branch bigint, p_vc_screen text)` | interna | Permissão efetiva do usuário logado numa tela e filial ({id_read, id_create, id_update}): filial acessível + nível 100 ou união das linhas de access_profile_screen dos perfis do usuário. Usada pelas RPCs de negócio (schema od). |
 
 ### Triggers
 
@@ -559,6 +793,43 @@ Toda chave abaixo pode chegar em `PostgrestException.message` como JSON. O app t
 | `EVENT_LOG_LIST_COMPANY_REQUIRED` | `event_log_list` |  |
 | `EVENT_LOG_LIST_FORBIDDEN` | `event_log_list` |  |
 | `EVENT_LOG_LIST_PERIOD_INVALID` | `event_log_list` |  |
+| `MATERIAL_ACTION_INVALID` | `material_save` |  |
+| `MATERIAL_FORBIDDEN` | `material_save` |  |
+| `MATERIAL_NAME_IN_USE` | `material_save` | Name |
+| `MATERIAL_NAME_REQUIRED` | `material_save` |  |
+| `MATERIAL_NOT_FOUND` | `material_save` |  |
+| `MATERIAL_PRICE_INVALID` | `material_save` |  |
+| `MATERIAL_REQUIRED` | `material_save` |  |
+| `MATERIAL_SOURCE_INVALID` | `material_save` |  |
+| `MATERIAL_STATUS_INVALID` | `material_save` |  |
+| `MATERIAL_WASTE_INVALID` | `material_save` |  |
+| `MATERIAL_YIELD_INVALID` | `material_save` |  |
+| `PRICING_BRANCH_REQUIRED` | `pricing_param_get`, `pricing_param_save`, `material_list`, `material_save`, `procedure_list`, `procedure_save` |  |
+| `PRICING_EXPENSE_AMOUNT_INVALID` | `pricing_param_save` | Expense |
+| `PRICING_EXPENSE_NAME_REQUIRED` | `pricing_param_save` |  |
+| `PRICING_EXPENSE_TYPE_INVALID` | `pricing_param_save` | Expense |
+| `PRICING_EXPENSES_INVALID` | `pricing_param_save` |  |
+| `PRICING_FEE_NAME_REQUIRED` | `pricing_param_save` |  |
+| `PRICING_FEE_RATE_INVALID` | `pricing_param_save` | Fee |
+| `PRICING_FEES_INVALID` | `pricing_param_save` |  |
+| `PRICING_FORBIDDEN` | `pricing_param_get`, `pricing_param_save`, `material_list`, `procedure_list` |  |
+| `PRICING_PARAM_INVALID` | `pricing_param_save` | Field |
+| `PRICING_PERCENT_TOO_HIGH` | `pricing_param_save` | Total |
+| `PROCEDURE_ACTION_INVALID` | `procedure_save` |  |
+| `PROCEDURE_CODE_IN_USE` | `procedure_save` | Code |
+| `PROCEDURE_FORBIDDEN` | `procedure_save` |  |
+| `PROCEDURE_LIST_REGIME_INVALID` | `procedure_list` |  |
+| `PROCEDURE_MATERIAL_INVALID` | `procedure_save` | Material |
+| `PROCEDURE_MATERIALS_INVALID` | `procedure_save` |  |
+| `PROCEDURE_MINUTES_INVALID` | `procedure_save` |  |
+| `PROCEDURE_NAME_IN_USE` | `procedure_save` | Name |
+| `PROCEDURE_NAME_REQUIRED` | `procedure_save` |  |
+| `PROCEDURE_NOT_FOUND` | `procedure_save` |  |
+| `PROCEDURE_PERCENT_INVALID` | `procedure_save` | Field |
+| `PROCEDURE_QUANTITY_INVALID` | `procedure_save` | Material |
+| `PROCEDURE_REQUIRED` | `procedure_save` |  |
+| `PROCEDURE_STATUS_INVALID` | `procedure_save` |  |
+| `PROCEDURE_VALUE_INVALID` | `procedure_save` | Field |
 | `SCREEN_LIST_FORBIDDEN` | `screen_list` |  |
 | `SESSION_COMPANY_BLOCKED` | `session_context` |  |
 | `SESSION_COMPANY_INACTIVE` | `session_context` |  |
@@ -576,5 +847,5 @@ Toda chave abaixo pode chegar em `PostgrestException.message` como JSON. O app t
 | `USER_UPDATE_CPF_INVALID` | `user_update` | Cpf |
 | `USER_UPDATE_NAME_REQUIRED` | `user_update` |  |
 | `USER_UPDATE_USER_NOT_FOUND` | `user_update` |  |
-| `VERSION_MISMATCH` | `session_context`, `company_create`, `company_update`, `branch_create`, `branch_update`, `access_profile_save`, `company_user_save`, `user_update`, `branch_list`, `access_profile_list`, `company_user_list`, `access_log_list`, `screen_list`, `event_log_list`, `user_create_check` | Function, Database, Application |
+| `VERSION_MISMATCH` | `session_context`, `company_create`, `company_update`, `branch_create`, `branch_update`, `access_profile_save`, `company_user_save`, `user_update`, `branch_list`, `access_profile_list`, `company_user_list`, `access_log_list`, `screen_list`, `event_log_list`, `user_create_check`, `pricing_param_get`, `pricing_param_save`, `material_list`, `material_save`, `procedure_list`, `procedure_save` | Function, Database, Application |
 
