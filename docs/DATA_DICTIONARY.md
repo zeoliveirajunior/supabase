@@ -1,6 +1,6 @@
 # Dicionário de dados — Supabase multi-company login
 
-> Base multi-empresa / multi-filial do futuro sistema de odontologia. Schemas: **`ad`** (AD - Administrative (empresas, filiais, usuários, perfis, telas, logs)), **`od`** (OD - Odontologia (tabelas e helpers da precificação; RPCs expostas ficam em ad)), **`private`** (helpers de RLS, fora da API). Atualizado em 2026-10-14.
+> Base multi-empresa / multi-filial do futuro sistema de odontologia. Schemas: **`ad`** (AD - Administrative (empresas, filiais, usuários, perfis, telas, logs)), **`od`** (OD - Odontologia (precificação e pacientes: tabelas e helpers; RPCs expostas ficam em ad)), **`private`** (helpers de RLS, fora da API). Atualizado em 2026-10-14.
 >
 > **Gerado** por `node tools/gen-dictionary.mjs` a partir de [`docs/dictionary/schema.json`](dictionary/schema.json). Não edite este arquivo à mão.
 > Viewer interativo: abra [`docs/dictionary/index.html`](dictionary/index.html) no navegador.
@@ -51,6 +51,8 @@ Colunas de auditoria em **toda** tabela (preenchidas pelo trigger `ad.trg_audit`
 | [`od.material`](#odmaterial) | Material | Catálogo de materiais da filial. Custo por unidade de uso = preço da embalagem ÷ (rendimento × (1 − perda)). O preço pode ser digitado ou vir da pesquisa de mercado (Edge Function material-price-lookup), com a loja/URL de origem e a data da última atualização. |
 | [`od.procedure`](#odprocedure) | Procedimento | Procedimento precificado: tempo de cadeira, laboratório/terceiros, outros materiais (valor informado), valor cobrado hoje (só comparação) e, opcionalmente, comissão e lucro próprios. O preço não é gravado: procedure_list calcula sempre com os parâmetros atuais (od.fn_pricing_calc). |
 | [`od.procedure_material`](#odprocedurematerial) | Material do procedimento | Materiais usados em cada procedimento com a quantidade em unidades de uso. Custo da linha = quantidade × custo unitário do material. A lista é substituída a cada procedure_save com materials. |
+| [`od.patient`](#odpatient) | Paciente | Ficha do paciente da filial: dados cadastrais (nome, apelido, CPF, RG, nascimento, gênero, estado civil, escolaridade, como conheceu, indicado por), contato e endereço, dados complementares (prontuário, profissão, plano/convênio, filiação, representante legal) e alerta de retorno. Documentos, telefones e CEP só com dígitos. nr_patient é sequencial por filial. |
+| [`od.patient_note`](#odpatientnote) | Nota do paciente | Notas gerais da ficha do paciente (card Notas gerais): texto livre com autor e data. Exclusão lógica (it_status 90). |
 
 ## Diagrama (ERD)
 
@@ -76,6 +78,9 @@ erDiagram
   branch ||--o{ procedure : "procedimentos"
   procedure ||--o{ procedure_material : "usa materiais"
   material ||--o{ procedure_material : "usado em"
+  branch ||--o{ patient : "pacientes"
+  patient ||--o{ patient_note : "notas"
+  app_user ||--o{ patient_note : "autor"
   auth_users {
     uuid id PK
     text email
@@ -272,6 +277,66 @@ erDiagram
     bigint nr_procedure PK, FK
     bigint nr_material PK, FK
     numeric qt_used
+  }
+  patient {
+    bigint nr_company PK, FK
+    bigint nr_branch PK, FK
+    bigint nr_patient PK
+    varchar vc_name
+    varchar vc_nickname
+    varchar vc_cpf UK
+    varchar vc_rg
+    date dt_birth
+    smallint it_gender
+    smallint it_marital_status
+    smallint it_education
+    smallint it_source
+    varchar vc_referral
+    text vc_notes
+    varchar vc_phone
+    varchar vc_mobile
+    varchar vc_phone_other
+    varchar vc_contact_name
+    varchar vc_email
+    boolean id_no_email
+    varchar vc_zip
+    varchar vc_state
+    varchar vc_city
+    varchar vc_address
+    varchar vc_address_number
+    varchar vc_district
+    varchar vc_address_complement
+    varchar vc_record_number
+    varchar vc_profession
+    varchar vc_workplace
+    varchar vc_work_time
+    varchar vc_plan_name
+    varchar vc_plan_number
+    varchar vc_father_name
+    varchar vc_father_cpf
+    varchar vc_father_rg
+    varchar vc_father_profession
+    varchar vc_mother_name
+    varchar vc_mother_cpf
+    varchar vc_mother_rg
+    varchar vc_mother_profession
+    varchar vc_guardian_name
+    varchar vc_guardian_cpf
+    varchar vc_guardian_rg
+    varchar vc_guardian_phone
+    date dt_return_alert
+    varchar vc_return_alert
+    smallint it_status
+  }
+  patient_note {
+    bigint nr_company PK, FK
+    bigint nr_branch PK, FK
+    bigint nr_patient PK, FK
+    bigint nr_note PK
+    text vc_note
+    bigint nr_user FK
+    timestamptz dh_note
+    smallint it_status
   }
 ```
 
@@ -662,6 +727,90 @@ Materiais usados em cada procedimento com a quantidade em unidades de uso. Custo
 | `dh_created` | `timestamptz` |  | NOT NULL | `now()` | Data/hora de inclusão do registro (trigger ad.trg_audit; nunca muda). |
 | `dh_updated` | `timestamptz` |  | NOT NULL | `now()` | Data/hora da última atualização (trigger ad.trg_audit). |
 
+### od.patient
+
+**Paciente**
+
+Ficha do paciente da filial: dados cadastrais (nome, apelido, CPF, RG, nascimento, gênero, estado civil, escolaridade, como conheceu, indicado por), contato e endereço, dados complementares (prontuário, profissão, plano/convênio, filiação, representante legal) e alerta de retorno. Documentos, telefones e CEP só com dígitos. nr_patient é sequencial por filial.
+
+**RLS:** SELECT: filiais acessíveis (private.fn_my_branches). Escrita só via patient_save (permissão na tela PATIENTS).
+
+| Coluna | Tipo | Chave | Nulo | Default | Descrição |
+|---|---|---|---|---|---|
+| `nr_company` | `bigint` | PK1, FK → `branch.nr_company` | NOT NULL |  | Número da empresa. |
+| `nr_branch` | `bigint` | PK2, FK → `branch.nr_branch` | NOT NULL |  | Número da filial. |
+| `nr_patient` | `bigint` | PK3 | NOT NULL |  | Número sequencial do paciente na filial. |
+| `vc_name` | `varchar(120)` |  | NOT NULL |  | Nome completo. |
+| `vc_nickname` | `varchar(60)` |  | NULL |  | Apelido / como prefere ser chamado. |
+| `vc_cpf` | `varchar(11)` | UK | NULL |  | CPF só com dígitos, validado (ad.fn_cpf_is_valid) e único na filial (patient_vc_cpf_uk). |
+| `vc_rg` | `varchar(20)` |  | NULL |  | RG, como digitado. |
+| `dt_birth` | `date` |  | NOT NULL |  | Data de nascimento (obrigatória; a idade é calculada nas RPCs). |
+| `it_gender` | `smallint` |  | NULL |  | Gênero. Valores: 1 = Masculino; 2 = Feminino; 3 = Outro. |
+| `it_marital_status` | `smallint` |  | NULL |  | Estado civil. Valores: 1 = Solteiro(a); 2 = Casado(a); 3 = Divorciado(a); 4 = Viúvo(a); 5 = União estável. |
+| `it_education` | `smallint` |  | NULL |  | Escolaridade. Valores: 1 = Ensino fundamental; 2 = Ensino médio; 3 = Ensino superior; 4 = Pós-graduação. |
+| `it_source` | `smallint` |  | NULL |  | Como conheceu a clínica. Valores: 1 = Google; 2 = Instagram; 3 = Facebook; 4 = Indicação; 5 = Escola; 6 = Outdoor; 7 = Panfleto; 8 = Placa; 9 = Plano / convênio; 10 = Rádio; 11 = TV; 12 = Revista; 99 = Outros. |
+| `vc_referral` | `varchar(120)` |  | NULL |  | Indicado por (nome de quem indicou). |
+| `vc_notes` | `text` |  | NULL |  | Observações do cadastro. |
+| `vc_phone` | `varchar(11)` |  | NULL |  | Telefone fixo, só dígitos (DDD + número). |
+| `vc_mobile` | `varchar(11)` |  | NULL |  | Celular / WhatsApp, só dígitos (DDD + número). |
+| `vc_phone_other` | `varchar(11)` |  | NULL |  | Outro telefone, só dígitos. |
+| `vc_contact_name` | `varchar(80)` |  | NULL |  | De quem é o celular de contato (quando não é do paciente). |
+| `vc_email` | `varchar(120)` |  | NULL |  | E-mail em minúsculas, validado (ad.fn_email_is_valid). |
+| `id_no_email` | `boolean` |  | NOT NULL | `false` | Paciente não possui e-mail (limpa vc_email). |
+| `vc_zip` | `varchar(8)` |  | NULL |  | CEP, só dígitos. |
+| `vc_state` | `varchar(2)` |  | NULL |  | UF, maiúscula. |
+| `vc_city` | `varchar(80)` |  | NULL |  | Cidade. |
+| `vc_address` | `varchar(120)` |  | NULL |  | Endereço (logradouro). |
+| `vc_address_number` | `varchar(10)` |  | NULL |  | Número. |
+| `vc_district` | `varchar(80)` |  | NULL |  | Bairro. |
+| `vc_address_complement` | `varchar(60)` |  | NULL |  | Complemento. |
+| `vc_record_number` | `varchar(20)` |  | NULL |  | Número do prontuário (numeração própria da clínica). |
+| `vc_profession` | `varchar(80)` |  | NULL |  | Profissão. |
+| `vc_workplace` | `varchar(80)` |  | NULL |  | Local de trabalho. |
+| `vc_work_time` | `varchar(40)` |  | NULL |  | Tempo de trabalho. |
+| `vc_plan_name` | `varchar(80)` |  | NULL |  | Nome do plano / convênio. |
+| `vc_plan_number` | `varchar(40)` |  | NULL |  | Número da carteirinha do plano. |
+| `vc_father_name` | `varchar(120)` |  | NULL |  | Filiação: nome do pai. |
+| `vc_father_cpf` | `varchar(11)` |  | NULL |  | CPF do pai, só dígitos, validado. |
+| `vc_father_rg` | `varchar(20)` |  | NULL |  | RG do pai. |
+| `vc_father_profession` | `varchar(80)` |  | NULL |  | Profissão do pai. |
+| `vc_mother_name` | `varchar(120)` |  | NULL |  | Filiação: nome da mãe. |
+| `vc_mother_cpf` | `varchar(11)` |  | NULL |  | CPF da mãe, só dígitos, validado. |
+| `vc_mother_rg` | `varchar(20)` |  | NULL |  | RG da mãe. |
+| `vc_mother_profession` | `varchar(80)` |  | NULL |  | Profissão da mãe. |
+| `vc_guardian_name` | `varchar(120)` |  | NULL |  | Representante legal: nome. |
+| `vc_guardian_cpf` | `varchar(11)` |  | NULL |  | CPF do representante legal, só dígitos, validado. |
+| `vc_guardian_rg` | `varchar(20)` |  | NULL |  | RG do representante legal. |
+| `vc_guardian_phone` | `varchar(11)` |  | NULL |  | Telefone do representante legal, só dígitos. |
+| `dt_return_alert` | `date` |  | NULL |  | Alerta de retorno: quando lembrar de chamar o paciente. |
+| `vc_return_alert` | `varchar(200)` |  | NULL |  | Alerta de retorno: motivo / observação. |
+| `it_status` | `smallint` |  | NOT NULL | `1` | Situação do paciente. Valores: 1 = Ativo; 90 = Inativo. |
+| `nr_operator` | `bigint` |  | NULL |  | Usuário (ad.app_user.nr_user) da última alteração. Preenchido pelo trigger ad.trg_audit. |
+| `dh_created` | `timestamptz` |  | NOT NULL | `now()` | Data/hora de inclusão do registro (trigger ad.trg_audit; nunca muda). |
+| `dh_updated` | `timestamptz` |  | NOT NULL | `now()` | Data/hora da última atualização (trigger ad.trg_audit). |
+
+### od.patient_note
+
+**Nota do paciente**
+
+Notas gerais da ficha do paciente (card Notas gerais): texto livre com autor e data. Exclusão lógica (it_status 90).
+
+**RLS:** SELECT: filiais acessíveis (private.fn_my_branches). Escrita só via patient_note_save (permissão na tela PATIENTS).
+
+| Coluna | Tipo | Chave | Nulo | Default | Descrição |
+|---|---|---|---|---|---|
+| `nr_company` | `bigint` | PK1, FK → `patient.nr_company` | NOT NULL |  | Número da empresa. |
+| `nr_branch` | `bigint` | PK2, FK → `patient.nr_branch` | NOT NULL |  | Número da filial. |
+| `nr_patient` | `bigint` | PK3, FK → `patient.nr_patient` | NOT NULL |  | Número do paciente. |
+| `nr_note` | `bigint` | PK4 | NOT NULL |  | Número sequencial da nota no paciente. |
+| `vc_note` | `text` |  | NOT NULL |  | Texto da nota. |
+| `nr_user` | `bigint` | FK → `app_user.nr_user` | NOT NULL |  | Autor da nota (usuário da sessão). |
+| `dh_note` | `timestamptz` |  | NOT NULL | `now()` | Data/hora da nota. |
+| `it_status` | `smallint` |  | NOT NULL | `1` | Situação da nota (exclusão é lógica). Valores: 1 = Ativa; 90 = Excluída. |
+| `nr_operator` | `bigint` |  | NULL |  | Usuário (ad.app_user.nr_user) da última alteração. Preenchido pelo trigger ad.trg_audit. |
+| `dh_created` | `timestamptz` |  | NOT NULL | `now()` | Data/hora de inclusão do registro (trigger ad.trg_audit; nunca muda). |
+| `dh_updated` | `timestamptz` |  | NOT NULL | `now()` | Data/hora da última atualização (trigger ad.trg_audit). |
+
 ## Functions
 
 Contrato das RPC: `p_json jsonb` de entrada (sempre com `nr_version`), `jsonb` de saída, erros via `RAISE EXCEPTION` com `ad.fn_message` (`{"Message": "CHAVE", "Parameters": {...}}`). Chamada no Flutter: `supabase.schema('<schema>').rpc('<nome>', params: {'p_json': {...}})` (`ad` ou `od`, conforme a assinatura).
@@ -691,6 +840,10 @@ Contrato das RPC: `p_json jsonb` de entrada (sempre com `nr_version`), `jsonb` d
 | `ad.material_save(p_json jsonb)` | authenticated | Cria (I, permissão criar) ou atualiza parcialmente (U, permissão alterar) um material: embalagem, preço, rendimento, unidade, perda, origem do preço (manual / pesquisa de mercado), situação. Grava event_log. |
 | `ad.procedure_list(p_json jsonb)` | authenticated | Procedimentos da filial com materiais, preço calculado (fn_pricing_calc), preço mínimo, decomposição (cartão, comissão, taxas, IR, lucro) e alertas (NO_TIME, NO_MATERIAL, MATERIAL_NO_PRICE, PERCENT_TOO_HIGH). it_tax_regime simula PF x PJ. Devolve também parâmetros, resumo e categorias. Exige leitura na tela PRICING. |
 | `ad.procedure_save(p_json jsonb)` | authenticated | Cria (I, permissão criar) ou atualiza parcialmente (U, permissão alterar) um procedimento e, quando materials está presente, substitui seus materiais x quantidades. Grava event_log. |
+| `ad.patient_list(p_json jsonb)` | authenticated | Lista paginada de pacientes da filial, por nome, com idade: busca por nome/apelido/e-mail (ILIKE, aceita % como curinga) e, com dígitos, por CPF (início), celular/telefone (trecho) e número do prontuário. Filtros: vc_search, id_include_inactive, nr_page, qt_page_size (máx. 200). Devolve a permissão do usuário na tela PATIENTS. Exige leitura na tela PATIENTS. |
+| `ad.patient_get(p_json jsonb)` | authenticated | Ficha completa de um paciente (todas as colunas, mais qt_age) e as notas gerais ativas, da mais recente para a mais antiga, com o nome do autor. Exige leitura na tela PATIENTS. |
+| `ad.patient_save(p_json jsonb)` | authenticated | Cria (I, permissão criar) ou atualiza parcialmente (U, permissão alterar) a ficha do paciente. Normaliza antes de validar (trim e corte dos textos; CPF, telefones e CEP só dígitos; e-mail minúsculo; UF maiúscula; id_no_email limpa o e-mail). Nascimento obrigatório entre 1900 e hoje; CPFs válidos; CPF do paciente único na filial; e-mail, telefones, CEP, UF e listas it_* validados. Grava event_log sem dados pessoais (nome, situação e campos alterados). |
+| `ad.patient_note_save(p_json jsonb)` | authenticated | Notas gerais do paciente: I adiciona (permissão criar ou alterar; autor = usuário da sessão), D exclui logicamente (permissão alterar). Grava event_log. |
 
 ### Helpers (regras compartilhadas / RLS)
 
@@ -806,6 +959,26 @@ Toda chave abaixo pode chegar em `PostgrestException.message` como JSON. O app t
 | `MATERIAL_STATUS_INVALID` | `material_save` |  |
 | `MATERIAL_WASTE_INVALID` | `material_save` |  |
 | `MATERIAL_YIELD_INVALID` | `material_save` |  |
+| `PATIENT_ACTION_INVALID` | `patient_save` |  |
+| `PATIENT_BIRTH_INVALID` | `patient_save` |  |
+| `PATIENT_BIRTH_REQUIRED` | `patient_save` |  |
+| `PATIENT_BRANCH_REQUIRED` | `patient_list`, `patient_get`, `patient_save`, `patient_note_save` |  |
+| `PATIENT_CPF_IN_USE` | `patient_save` |  |
+| `PATIENT_CPF_INVALID` | `patient_save` |  |
+| `PATIENT_EMAIL_INVALID` | `patient_save` |  |
+| `PATIENT_FORBIDDEN` | `patient_list`, `patient_get`, `patient_save` |  |
+| `PATIENT_NAME_REQUIRED` | `patient_save` |  |
+| `PATIENT_NOT_FOUND` | `patient_get`, `patient_save`, `patient_note_save` |  |
+| `PATIENT_NOTE_ACTION_INVALID` | `patient_note_save` |  |
+| `PATIENT_NOTE_FORBIDDEN` | `patient_note_save` |  |
+| `PATIENT_NOTE_NOT_FOUND` | `patient_note_save` |  |
+| `PATIENT_NOTE_REQUIRED` | `patient_note_save` |  |
+| `PATIENT_PHONE_INVALID` | `patient_save` |  |
+| `PATIENT_REQUIRED` | `patient_get`, `patient_save`, `patient_note_save` |  |
+| `PATIENT_STATE_INVALID` | `patient_save` |  |
+| `PATIENT_STATUS_INVALID` | `patient_save` |  |
+| `PATIENT_VALUE_INVALID` | `patient_save` |  |
+| `PATIENT_ZIP_INVALID` | `patient_save` |  |
 | `PRICING_BRANCH_REQUIRED` | `pricing_param_get`, `pricing_param_save`, `material_list`, `material_save`, `procedure_list`, `procedure_save` |  |
 | `PRICING_EXPENSE_AMOUNT_INVALID` | `pricing_param_save` | Expense |
 | `PRICING_EXPENSE_NAME_REQUIRED` | `pricing_param_save` |  |
@@ -849,5 +1022,5 @@ Toda chave abaixo pode chegar em `PostgrestException.message` como JSON. O app t
 | `USER_UPDATE_CPF_INVALID` | `user_update` | Cpf |
 | `USER_UPDATE_NAME_REQUIRED` | `user_update` |  |
 | `USER_UPDATE_USER_NOT_FOUND` | `user_update` |  |
-| `VERSION_MISMATCH` | `session_context`, `company_create`, `company_update`, `branch_create`, `branch_update`, `access_profile_save`, `company_user_save`, `user_update`, `branch_list`, `access_profile_list`, `company_user_list`, `access_log_list`, `screen_list`, `event_log_list`, `user_create_check`, `pricing_param_get`, `pricing_param_save`, `material_list`, `material_save`, `procedure_list`, `procedure_save` | Function, Database, Application |
+| `VERSION_MISMATCH` | `session_context`, `company_create`, `company_update`, `branch_create`, `branch_update`, `access_profile_save`, `company_user_save`, `user_update`, `branch_list`, `access_profile_list`, `company_user_list`, `access_log_list`, `screen_list`, `event_log_list`, `user_create_check`, `pricing_param_get`, `pricing_param_save`, `material_list`, `material_save`, `procedure_list`, `procedure_save`, `patient_list`, `patient_get`, `patient_save`, `patient_note_save` | Function, Database, Application |
 

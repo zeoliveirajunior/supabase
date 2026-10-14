@@ -51,3 +51,15 @@ drop policy if exists procedure_material_select on od.procedure_material;
 create policy procedure_material_select on od.procedure_material
   for select to authenticated
   using ((nr_company, nr_branch) in (select mb.nr_company, mb.nr_branch from private.fn_my_branches() mb));
+
+-- od.patient
+drop policy if exists patient_select on od.patient;
+create policy patient_select on od.patient
+  for select to authenticated
+  using ((nr_company, nr_branch) in (select mb.nr_company, mb.nr_branch from private.fn_my_branches() mb));
+
+-- od.patient_note
+drop policy if exists patient_note_select on od.patient_note;
+create policy patient_note_select on od.patient_note
+  for select to authenticated
+  using ((nr_company, nr_branch) in (select mb.nr_company, mb.nr_branch from private.fn_my_branches() mb));
